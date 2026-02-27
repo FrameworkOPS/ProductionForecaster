@@ -1,0 +1,646 @@
+/* Skyright Roofing - Production Forecaster */
+/* Color Scheme: Dark Teal/Green Primary, Orange Accent */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary-dark: #0F3D2F;
+  --primary-medium: #1B4D3E;
+  --primary-light: #2D6A52;
+  --accent-orange: #FF8C00;
+  --accent-orange-light: #FFB84D;
+  --text-dark: #1a1a1a;
+  --text-light: #ffffff;
+  --border-light: #e0e0e0;
+  --success: #4caf50;
+  --warning: #ff9800;
+  --danger: #f44336;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f5f5f5;
+}
+
+.app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8f5f0 100%);
+}
+
+/* HEADER STYLING */
+.header {
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+  color: var(--text-light);
+  padding: 2rem 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-bottom: 4px solid var(--accent-orange);
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.skyright-logo {
+  height: 80px;
+  width: auto;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.header-text p {
+  font-size: 1.2rem;
+  opacity: 0.95;
+  font-weight: 500;
+  margin: 0;
+  color: var(--text-light);
+}
+
+.tagline {
+  font-size: 0.95rem;
+  opacity: 0.85;
+  margin-top: 0.5rem;
+  color: var(--text-light);
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  opacity: 0.8;
+  margin-top: 1rem;
+  color: var(--text-light);
+}
+
+/* CONTAINER */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+/* SECTION STYLING */
+section {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid var(--accent-orange);
+}
+
+section h2 {
+  color: var(--primary-dark);
+  font-size: 1.8rem;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+section h3 {
+  color: var(--primary-medium);
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  margin-top: 1.5rem;
+}
+
+/* METRICS GRID */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+/* METRIC CARDS */
+.metric-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
+  border: 2px solid var(--border-light);
+  border-radius: 10px;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.metric-card.clickable {
+  cursor: pointer;
+  border-color: var(--accent-orange);
+  border-width: 2px;
+}
+
+.metric-card.clickable:hover {
+  background: linear-gradient(135deg, var(--primary-light), #ffffff);
+  box-shadow: 0 8px 20px rgba(15, 61, 47, 0.15);
+  transform: translateY(-4px);
+}
+
+.metric-card.expanded {
+  border-color: var(--accent-orange);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+  color: white;
+}
+
+.metric-label {
+  font-size: 0.85rem;
+  color: var(--primary-medium);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.75rem;
+}
+
+.metric-card.expanded .metric-label {
+  color: var(--accent-orange);
+}
+
+.metric-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin-bottom: 0.5rem;
+}
+
+.metric-card.expanded .metric-value {
+  color: var(--accent-orange);
+  font-size: 3rem;
+}
+
+.metric-detail {
+  font-size: 0.85rem;
+  color: #666;
+  font-weight: 500;
+}
+
+.metric-card.expanded .metric-detail {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.metric-card.positive {
+  border-left: 4px solid var(--success);
+}
+
+.metric-card.negative {
+  border-left: 4px solid var(--danger);
+}
+
+/* EXPANDED DETAIL VIEW */
+.metric-detail-expanded {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  font-size: 0.95rem;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.detail-value {
+  font-weight: 700;
+  color: var(--accent-orange);
+  font-size: 1.1rem;
+}
+
+.detail-item.training {
+  color: var(--accent-orange-light);
+}
+
+/* JOB TYPE CARDS */
+.job-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.job-type-card {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-medium) 100%);
+  color: white;
+  padding: 1.5rem;
+  border-radius: 10px;
+  border: 2px solid var(--accent-orange);
+  box-shadow: 0 4px 12px rgba(15, 61, 47, 0.2);
+  transition: all 0.3s ease;
+}
+
+.job-type-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(15, 61, 47, 0.3);
+}
+
+.job-type-card h3 {
+  color: var(--accent-orange);
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.job-metric {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 0.75rem;
+}
+
+.job-metric:last-of-type {
+  border-bottom: none;
+}
+
+.job-metric span {
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+.job-metric strong {
+  font-weight: 700;
+  color: var(--accent-orange-light);
+  font-size: 1.1rem;
+}
+
+/* INPUT SECTION */
+.data-input-section {
+  background: white;
+}
+
+.input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.input-group label {
+  font-weight: 600;
+  color: var(--primary-medium);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.input-group input {
+  padding: 0.75rem;
+  border: 2px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.1);
+}
+
+/* CONFIG GRID */
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.config-card {
+  background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%);
+  padding: 1.5rem;
+  border-radius: 10px;
+  border: 2px solid var(--primary-light);
+}
+
+.config-card h4 {
+  color: var(--primary-dark);
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.config-card.warning-card {
+  border: 2px solid var(--danger);
+  background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+}
+
+.crew-lead-warning {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  color: #856404;
+}
+
+.crew-lead-warning p {
+  margin: 0.5rem 0;
+  font-weight: 500;
+}
+
+.crew-lead-warning p:first-child {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.btn-override {
+  background: #ffc107;
+  color: #333;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.btn-override:hover {
+  background: #ffb300;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+.crew-lead-override {
+  background: #e7f3ff;
+  border: 1px solid #2196f3;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.job-type-card.needs-crew-lead {
+  opacity: 0.85;
+  border-color: var(--danger);
+  border-width: 3px;
+}
+
+.crew-lead-badge {
+  display: inline-block;
+  background: var(--danger);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.config-input {
+  margin-bottom: 1rem;
+}
+
+.config-input label {
+  display: block;
+  font-weight: 600;
+  color: var(--primary-medium);
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.config-input input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+
+.config-input input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px rgba(255, 140, 0, 0.1);
+}
+
+/* BUTTONS */
+.btn-primary,
+.btn-small {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.9rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-medium) 100%);
+  color: white;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 6px 16px rgba(15, 61, 47, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-small {
+  background: var(--accent-orange);
+  color: white;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.85rem;
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.btn-small:hover {
+  background: #e67e00;
+  box-shadow: 0 4px 12px rgba(255, 140, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+/* TRAINING SECTION */
+.training-section {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary-medium) 100%);
+  color: white;
+  border-left: 4px solid var(--accent-orange);
+}
+
+.training-section h2,
+.training-section h3 {
+  color: var(--accent-orange);
+}
+
+.training-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.training-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border-left: 4px solid var(--accent-orange-light);
+  transition: all 0.3s ease;
+}
+
+.training-item:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(4px);
+}
+
+.crew-type {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.status {
+  background: rgba(255, 140, 0, 0.3);
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.training-item.ready .status {
+  background: rgba(76, 175, 80, 0.3);
+  color: #4caf50;
+}
+
+/* RESPONSIVE DESIGN */
+@media (max-width: 768px) {
+  .header {
+    padding: 1.5rem 1rem;
+  }
+
+  .logo-section {
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .skyright-logo {
+    height: 60px;
+    width: auto;
+  }
+
+  .header-text p {
+    font-size: 1rem;
+  }
+
+  .container {
+    padding: 1rem;
+  }
+
+  section {
+    padding: 1.5rem;
+  }
+
+  section h2 {
+    font-size: 1.4rem;
+  }
+
+  .metrics-grid,
+  .job-types-grid,
+  .input-grid,
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-value {
+    font-size: 2rem;
+  }
+
+  .metric-card.expanded .metric-value {
+    font-size: 2.5rem;
+  }
+
+  .detail-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .training-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-text h1 {
+    font-size: 1.5rem;
+  }
+
+  section h2 {
+    font-size: 1.2rem;
+  }
+
+  .metric-value {
+    font-size: 1.8rem;
+  }
+
+  .metric-card.expanded .metric-value {
+    font-size: 2rem;
+  }
+
+  .btn-primary,
+  .btn-small {
+    padding: 0.6rem 1rem;
+  }
+}
+
+/* UTILITY CLASSES */
+.positive {
+  color: var(--success);
+}
+
+.negative {
+  color: var(--danger);
+}
+
+/* ACCESSIBILITY */
+@media (prefers-reduced-motion: reduce) {
+  .metric-card,
+  .job-type-card,
+  .btn-primary,
+  .btn-small,
+  .training-item {
+    transition: none;
+  }
+}
