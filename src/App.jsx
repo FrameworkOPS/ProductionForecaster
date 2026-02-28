@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import skyrichtLogo from '/assets/skyright-logo.png';
 
 export default function App() {
   // Data inputs
@@ -176,7 +175,7 @@ export default function App() {
       <header className="header">
         <div className="header-content">
           <div className="logo-section">
-            <img src={skyrichtLogo} alt="Skyright Roofing" className="skyright-logo" />
+            <img src="/assets/skyright-logo.png" alt="Skyright Roofing" className="skyright-logo" />
             <div className="header-text">
               <p className="tagline">Production Forecaster</p>
             </div>
