@@ -19,7 +19,6 @@ export default function App() {
       sqsPerCrewWeekly: 120,
       crews: 2,
       productionRate: 240,
-      leadTimeWeeks: 2,
       revenuePerSqs: 28,
       crewLeads: 1,
       sqsPerCrewLead: 240,
@@ -30,7 +29,6 @@ export default function App() {
       sqsPerCrewWeekly: 180,
       crews: 1,
       productionRate: 180,
-      leadTimeWeeks: 3,
       revenuePerSqs: 42,
       crewLeads: 1,
       sqsPerCrewLead: 180,
@@ -276,8 +274,6 @@ export default function App() {
       pdf.setFontSize(9);
       const assumptions = [
         [`SQS Waiting: ${sqsWaiting.toLocaleString()}`],
-        [`Weekly Sales Forecast: ${weeklySalesForecast} SQS`],
-        [`Training Cycle: ${trainingCycleWeeks} weeks`],
         [`Site Supervisors: ${siteSupervisors}`],
         [`Shingles Crews: ${jobTypes.shingles.crews}`],
         [`Metal Crews: ${jobTypes.metal.crews}`],
@@ -626,7 +622,13 @@ export default function App() {
 
             {/* Net Change */}
             <div className={`metric-card ${metrics.netChange >= 0 ? 'positive' : 'negative'}`}>
-              <div className="metric-label">Net Weekly Change</div>
+              <div
+                className="metric-label"
+                title="Weekly pipeline velocity: (Weekly Sales - Weekly Production). Positive = pipeline growing, Negative = pipeline shrinking"
+                style={{ cursor: 'help' }}
+              >
+                Net Weekly Change
+              </div>
               <div className="metric-value">{metrics.netChange.toLocaleString()}</div>
               <div className="metric-detail">{metrics.netChange > 0 ? '📈 Growing' : '📉 Declining'}</div>
             </div>
@@ -764,13 +766,6 @@ export default function App() {
                   <span>Weeks in Pipeline</span>
                   <strong>{type.weeksForType.toFixed(1)} weeks</strong>
                 </div>
-
-                <button
-                  className="btn-small"
-                  onClick={() => addNewCrew(key)}
-                >
-                  + Add Crew
-                </button>
               </div>
             ))}
           </div>
@@ -791,30 +786,13 @@ export default function App() {
             </div>
 
             <div className="input-group">
-              <label>Weekly Sales Forecast (SQS)</label>
-              <input
-                type="number"
-                value={weeklySalesForecast}
-                onChange={(e) => setWeeklySalesForecast(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="input-group">
-              <label>Training Cycle (Weeks)</label>
-              <input
-                type="number"
-                value={trainingCycleWeeks}
-                onChange={(e) => setTrainingCycleWeeks(Number(e.target.value))}
-              />
-            </div>
-
-            <div className="input-group">
               <label>Current Site Supers/Crew Leads</label>
               <input
                 type="number"
                 value={siteSupervisors}
                 onChange={(e) => setSiteSupervisors(Number(e.target.value))}
               />
+              <small style={{ color: '#666', marginTop: '4px' }}>All sales planning and crew hiring happens in the Forecaster section</small>
             </div>
           </div>
 
@@ -895,18 +873,6 @@ export default function App() {
                 </div>
 
                 <div className="config-input">
-                  <label>Lead Time (Weeks)</label>
-                  <input
-                    type="number"
-                    value={type.leadTimeWeeks}
-                    onChange={(e) => setJobTypes({
-                      ...jobTypes,
-                      [key]: {...type, leadTimeWeeks: Number(e.target.value)}
-                    })}
-                  />
-                </div>
-
-                <div className="config-input">
                   <label>Revenue Per SQS</label>
                   <input
                     type="number"
@@ -922,9 +888,7 @@ export default function App() {
             })}
           </div>
 
-          <button className="btn-primary" onClick={addNewSuper}>
-            + Add New Site Supervisor
-          </button>
+          <p style={{ color: '#666', fontStyle: 'italic', marginTop: '20px' }}>💡 Tip: Add new supervisors in the Forecaster section using the Crew Hiring Plan</p>
         </section>
 
         {/* TRAINING TRACKING */}
