@@ -42,8 +42,32 @@ export default function App() {
   const [showOverrideWarning, setShowOverrideWarning] = useState({});
   const [overrideEnabled, setOverrideEnabled] = useState({});
 
-  // NEW: Forecast features
-  const [plannedHires, setPlannedHires] = useState([]);
+  // NEW: Forecast features (Phase 3: Forecaster Redesign)
+  const [forecastPeriod, setForecastPeriod] = useState('6-month'); // '3-month', '6-month', '12-month'
+
+  // Sales forecast by job type and week
+  const [salesForecast, setSalesForecast] = useState(() => {
+    // Initialize with 26 weeks (6 months) of default sales
+    const weeks = Array(26).fill(0).map((_, i) => ({
+      shingles: 200,
+      metal: 120
+    }));
+    return weeks;
+  });
+
+  // Crew hiring plan - enhanced structure
+  const [hiringPlan, setHiringPlan] = useState([]);
+
+  // Form states for adding new hires
+  const [newHireDate, setNewHireDate] = useState('');
+  const [newHireType, setNewHireType] = useState('crew');
+  const [newHireJobType, setNewHireJobType] = useState('shingles');
+  const [newHireCount, setNewHireCount] = useState(1);
+  const [newHireOutputPerWeek, setNewHireOutputPerWeek] = useState(120);
+  const [newHireTrainingWeeks, setNewHireTrainingWeeks] = useState(4);
+
+  // Forecast persistence
+  const [plannedHires, setPlannedHires] = useState([]); // Keep for backward compatibility
   const [forecastSnapshots, setForecastSnapshots] = useState(() => {
     try {
       const saved = localStorage.getItem('skyright_forecasts');
@@ -52,15 +76,11 @@ export default function App() {
       return [];
     }
   });
-  const [showTimelineModal, setShowTimelineModal] = useState(false);
+
+  // Modal states
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
-  const [newHireName, setNewHireName] = useState('');
-  const [newHireDate, setNewHireDate] = useState('');
-  const [newHireType, setNewHireType] = useState('crew');
-  const [newHireJobType, setNewHireJobType] = useState('shingles');
-  const [newHireTrainingWeeks, setNewHireTrainingWeeks] = useState(4);
-  const [newHireQuantity, setNewHireQuantity] = useState(1);
+  const [showHiringModal, setShowHiringModal] = useState(false);
   const [saveForecastName, setSaveForecastName] = useState('');
   const [sixMonthForecast, setSixMonthForecast] = useState([]);
 
@@ -83,84 +103,142 @@ export default function App() {
     return { canRun: true, warning: false };
   };
 
-  // NEW: Generate 6-month forecast with planned hires
+  // NEW: Helper function for weighted training ramp-up percentage
+  const getTrainingRampPercentage = (trainingWeekNumber, totalTrainingWeeks) => {
+    // Standard ramp-up: 10%, 30%, 60%, 90%, 100%
+    const standardRamp = [0.10, 0.30, 0.60, 0.90, 1.0];
+
+    if (totalTrainingWeeks <= 0) return 1.0; // Immediate if no training
+    if (trainingWeekNumber > totalTrainingWeeks) return 1.0; // Full after training
+
+    if (totalTrainingWeeks >= 5) {
+      // Use standard ramp if training is 5+ weeks
+      return standardRamp[Math.min(trainingWeekNumber - 1, 4)];
+    } else if (totalTrainingWeeks === 4) {
+      // 4 week training: use weeks 1-4, then 100%
+      return standardRamp[trainingWeekNumber - 1];
+    } else if (totalTrainingWeeks === 2) {
+      // 2 week training: 50%, 100%
+      return trainingWeekNumber === 1 ? 0.5 : 1.0;
+    } else if (totalTrainingWeeks === 3) {
+      // 3 week training: interpolate
+      return [0.25, 0.65, 1.0][trainingWeekNumber - 1] || 1.0;
+    }
+    // Default: spread the standard ramp across the training period
+    const interpolated = (trainingWeekNumber / totalTrainingWeeks) * 0.9 + 0.1;
+    return Math.min(interpolated, 1.0);
+  };
+
+  // NEW: Add crew hire to hiring plan
+  const addHire = () => {
+    if (!newHireDate) {
+      alert('Please select a hire date');
+      return;
+    }
+
+    const hireDate = new Date(newHireDate);
+    const readyDate = new Date(hireDate);
+    readyDate.setDate(readyDate.getDate() + newHireTrainingWeeks * 7);
+
+    const hire = {
+      id: Date.now().toString(),
+      hireDate,
+      type: newHireType,
+      jobType: newHireType === 'crew' ? newHireJobType : null,
+      count: newHireCount,
+      outputPerWeek: newHireType === 'crew' ? newHireOutputPerWeek : null,
+      trainingWeeks: newHireTrainingWeeks,
+      readyDate
+    };
+
+    setHiringPlan([...hiringPlan, hire]);
+
+    // Reset form
+    setNewHireDate('');
+    setNewHireType('crew');
+    setNewHireJobType('shingles');
+    setNewHireCount(1);
+    setNewHireOutputPerWeek(120);
+    setNewHireTrainingWeeks(4);
+  };
+
+  // NEW: Remove hire from hiring plan
+  const removeHire = (hireId) => {
+    setHiringPlan(hiringPlan.filter(h => h.id !== hireId));
+  };
+
+  // NEW: Generate 6-month forecast with weighted training ramp-up
   const generateSixMonthForecast = () => {
     const forecast = [];
     let currentPipeline = sqsWaiting;
-    let currentDate = new Date();
-    let activeCrews = { ...jobTypes };
-
-    // Track which crews become ready each week
-    const forecastStart = new Date(currentDate);
+    const forecastStart = new Date();
     forecastStart.setHours(0, 0, 0, 0);
-    let lastWeekDate = new Date(forecastStart);
-    lastWeekDate.setDate(lastWeekDate.getDate() - 7);
 
     for (let week = 0; week < 26; week++) {
       const weekDate = new Date(forecastStart.getTime() + week * 7 * 24 * 60 * 60 * 1000);
 
-      // 1. Check which planned hires become ready this week
-      const newCrewsReady = { shingles: 0, metal: 0 };
-      plannedHires.forEach(hire => {
-        const readyDate = new Date(hire.readyDate);
-        if (readyDate <= weekDate && readyDate > lastWeekDate) {
-          if (hire.type === 'crew') {
-            newCrewsReady[hire.jobType] += hire.quantity;
+      // 1. Get planned sales for this week (from sales forecast table)
+      const weekSales = salesForecast[week] || { shingles: 0, metal: 0 };
+      const plannedSalesShingles = weekSales.shingles || 0;
+      const plannedSalesMetal = weekSales.metal || 0;
+      const plannedSalesTotal = plannedSalesShingles + plannedSalesMetal;
+
+      // 2. Calculate existing crew production (static)
+      let existingProduction = 0;
+      existingProduction += jobTypes.shingles.crews * jobTypes.shingles.sqsPerCrewWeekly;
+      existingProduction += jobTypes.metal.crews * jobTypes.metal.sqsPerCrewWeekly;
+
+      // 3. Calculate new crew production with weighted training ramp-up
+      let newCrewProduction = 0;
+      let trainingNotes = [];
+
+      hiringPlan.forEach(hire => {
+        if (hire.type === 'crew') {
+          const hireDate = new Date(hire.hireDate);
+          if (hireDate <= weekDate) {
+            // Calculate days since hire and which training week
+            const daysSinceHire = (weekDate - hireDate) / (24 * 60 * 60 * 1000);
+            const trainingWeekNumber = Math.ceil(daysSinceHire / 7);
+
+            // Get ramp-up percentage
+            const rampPercentage = getTrainingRampPercentage(trainingWeekNumber, hire.trainingWeeks);
+            const crewProduction = (hire.outputPerWeek || jobTypes[hire.jobType].sqsPerCrewWeekly) * hire.count * rampPercentage;
+            newCrewProduction += crewProduction;
+
+            // Add training note if this is during training
+            if (rampPercentage < 1.0) {
+              trainingNotes.push(`${hire.jobType}: ${Math.round(rampPercentage * 100)}% productivity`);
+            }
           }
         }
       });
 
-      // 2. Update active crews (permanent increases)
-      Object.keys(newCrewsReady).forEach(type => {
-        if (activeCrews[type]) {
-          activeCrews[type] = { ...activeCrews[type], crews: (activeCrews[type].crews || 0) + newCrewsReady[type] };
-        }
-      });
+      // 4. Calculate total production
+      const totalProduction = existingProduction + newCrewProduction;
 
-      // 3. Calculate production this week
-      let weeklyOutflow = 0;
-      Object.values(activeCrews).forEach(type => {
-        if (type.crews) {
-          weeklyOutflow += type.crews * (type.sqsPerCrewWeekly || 0);
-        }
-      });
+      // 5. Update pipeline (sales in - production out)
+      currentPipeline += plannedSalesTotal - totalProduction;
+      currentPipeline = Math.max(0, currentPipeline);
 
-      const weeklyIncome = weeklySalesForecast;
-
-      // 4. Update pipeline
-      currentPipeline = Math.max(0, currentPipeline + weeklyIncome - weeklyOutflow);
-
-      // 5. Calculate revenue
+      // 6. Calculate revenue
       let totalRevenue = 0;
-      Object.entries(activeCrews).forEach(([key, type]) => {
-        if (type.crews) {
-          const typeProduction = type.crews * (type.sqsPerCrewWeekly || 0);
-          totalRevenue += typeProduction * (type.revenuePerSqs || 0);
-        }
-      });
+      totalRevenue += plannedSalesShingles * (jobTypes.shingles.revenuePerSqs || 0);
+      totalRevenue += plannedSalesMetal * (jobTypes.metal.revenuePerSqs || 0);
 
-      // 6. Generate notes
-      let notes = '';
-      if (Object.values(newCrewsReady).some(v => v > 0)) {
-        const readyTypes = Object.entries(newCrewsReady)
-          .filter(([_, qty]) => qty > 0)
-          .map(([type, qty]) => `${qty} ${type} crew(s)`)
-          .join(', ');
-        notes = `${readyTypes} ready`;
-      }
+      // 7. Create notes
+      const notes = trainingNotes.length > 0 ? trainingNotes.join(', ') : '';
 
       forecast.push({
         weekNumber: week,
         weekDate: weekDate.toLocaleDateString(),
+        plannedSalesShingles,
+        plannedSalesMetal,
+        plannedSalesTotal,
+        existingProduction: Math.round(existingProduction),
+        newCrewProduction: Math.round(newCrewProduction),
+        totalProduction: Math.round(totalProduction),
         pipeline: Math.round(currentPipeline),
-        weeklyIncome,
-        weeklyOutflow: Math.round(weeklyOutflow),
-        netChange: weeklyIncome - Math.round(weeklyOutflow),
-        activeCrew: {
-          shingles: activeCrews.shingles?.crews || 0,
-          metal: activeCrews.metal?.crews || 0
-        },
-        newCrewsReady,
+        netChange: Math.round(plannedSalesTotal - totalProduction),
         totalRevenue: Math.round(totalRevenue),
         notes
       });
