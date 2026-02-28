@@ -42,6 +42,25 @@ export default function App() {
   const [showOverrideWarning, setShowOverrideWarning] = useState({});
   const [overrideEnabled, setOverrideEnabled] = useState({});
 
+  // Helper functions (must be defined before calculateMetrics)
+  const getReadyCrews = (type) => {
+    return newCrews.filter(c => c.type === type && new Date() >= c.readyDate).length;
+  };
+
+  const getReadySupers = () => {
+    return newSupers.filter(s => new Date() >= s.readyDate).length;
+  };
+
+  const canRunJobType = (jobTypeKey) => {
+    const type = jobTypes[jobTypeKey];
+    const totalCrewLeads = type.crewLeads + getReadySupers();
+
+    if (type.requiresCrewLead && totalCrewLeads === 0) {
+      return { canRun: false, warning: true };
+    }
+    return { canRun: true, warning: false };
+  };
+
   // Calculate metrics
   const calculateMetrics = () => {
     let totalProduction = 0;
@@ -142,26 +161,6 @@ export default function App() {
         status: 'training'
       }]);
     }
-  };
-
-  // Check if training is complete
-  const getReadyCrews = (type) => {
-    return newCrews.filter(c => c.type === type && new Date() >= c.readyDate).length;
-  };
-
-  const getReadySupers = () => {
-    return newSupers.filter(s => new Date() >= s.readyDate).length;
-  };
-
-  // Check if a job type can run (has crew leads)
-  const canRunJobType = (jobTypeKey) => {
-    const type = jobTypes[jobTypeKey];
-    const totalCrewLeads = type.crewLeads + getReadySupers();
-
-    if (type.requiresCrewLead && totalCrewLeads === 0) {
-      return { canRun: false, warning: true };
-    }
-    return { canRun: true, warning: false };
   };
 
   // Handle override for running without crew lead
