@@ -84,6 +84,16 @@ export default function App() {
   const [saveForecastName, setSaveForecastName] = useState('');
   const [sixMonthForecast, setSixMonthForecast] = useState([]);
 
+  // Update forecast whenever hiring plan or sales forecast changes
+  useEffect(() => {
+    try {
+      const forecast = generateSixMonthForecast();
+      setSixMonthForecast(forecast);
+    } catch (error) {
+      console.error('Error generating forecast:', error);
+    }
+  }, [hiringPlan, salesForecast]);
+
   // Helper functions (must be defined before calculateMetrics)
   const getReadyCrews = (type) => {
     return newCrews.filter(c => c.type === type && new Date() >= c.readyDate).length;
@@ -1264,7 +1274,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {generateSixMonthForecast().map((week, idx) => (
+                    {sixMonthForecast.map((week, idx) => (
                       <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#f9f9f9' : 'white', borderBottom: '1px solid #eee' }}>
                         <td style={{ padding: '8px' }}>W{week.weekNumber}</td>
                         <td style={{ padding: '8px', textAlign: 'right' }}>{week.plannedSalesShingles}</td>
