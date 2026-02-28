@@ -4,34 +4,29 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 export default function App() {
-  // Data inputs
-  const [sqsWaiting, setSqsWaiting] = useState(1239);
-  const [weeklySalesForecast, setWeeklySalesForecast] = useState(200);
+  // Data inputs - separate SQS waiting for each job type
+  const [sqsWaitingShingles, setSqsWaitingShingles] = useState(750);
+  const [sqsWaitingMetal, setSqsWaitingMetal] = useState(489);
   const [trainingCycleWeeks, setTrainingCycleWeeks] = useState(4);
 
   // State for modal/detail view
   const [expandedMetric, setExpandedMetric] = useState(null);
 
   // Job types configuration - Shingles and Metal only
+  // Note: Each crew has one lead, so crewLeads = crews. SQS per crew is the capacity.
   const [jobTypes, setJobTypes] = useState({
     shingles: {
       name: 'Shingles',
       sqsPerCrewWeekly: 120,
       crews: 2,
-      productionRate: 240,
       revenuePerSqs: 28,
-      crewLeads: 1,
-      sqsPerCrewLead: 240,
       requiresCrewLead: true
     },
     metal: {
       name: 'Metal',
       sqsPerCrewWeekly: 180,
       crews: 1,
-      productionRate: 180,
       revenuePerSqs: 42,
-      crewLeads: 1,
-      sqsPerCrewLead: 180,
       requiresCrewLead: true
     }
   });
@@ -93,7 +88,7 @@ export default function App() {
     } catch (error) {
       console.error('Error generating forecast:', error);
     }
-  }, [hiringPlan, salesForecast, jobTypes, sqsWaiting]);
+  }, [hiringPlan, salesForecast, jobTypes, sqsWaitingShingles, sqsWaitingMetal]);
 
   // Helper functions (must be defined before calculateMetrics)
   const getReadyCrews = (type) => {
@@ -181,7 +176,7 @@ export default function App() {
   // NEW: Generate 6-month forecast with weighted training ramp-up
   const generateSixMonthForecast = () => {
     const forecast = [];
-    let currentPipeline = sqsWaiting;
+    let currentPipeline = sqsWaitingShingles + sqsWaitingMetal;
     const forecastStart = new Date();
     forecastStart.setHours(0, 0, 0, 0);
 
@@ -270,8 +265,8 @@ export default function App() {
       name,
       timestamp: new Date().toLocaleString(),
       data: {
-        sqsWaiting,
-        weeklySalesForecast,
+        sqsWaitingShingles,
+        sqsWaitingMetal,
         trainingCycleWeeks,
         siteSupervisors,
         jobTypes,
@@ -296,9 +291,15 @@ export default function App() {
     const snapshot = forecastSnapshots.find(s => s.id === id);
     if (!snapshot) return;
 
-    // Rehydrate all state
-    setSqsWaiting(snapshot.data.sqsWaiting);
-    setWeeklySalesForecast(snapshot.data.weeklySalesForecast);
+    // Rehydrate all state - handle both old and new formats
+    if (snapshot.data.sqsWaitingShingles !== undefined) {
+      setSqsWaitingShingles(snapshot.data.sqsWaitingShingles);
+      setSqsWaitingMetal(snapshot.data.sqsWaitingMetal);
+    } else if (snapshot.data.sqsWaiting !== undefined) {
+      // Backward compatibility: split old sqsWaiting proportionally
+      setSqsWaitingShingles(Math.round(snapshot.data.sqsWaiting * 0.6));
+      setSqsWaitingMetal(Math.round(snapshot.data.sqsWaiting * 0.4));
+    }
     setTrainingCycleWeeks(snapshot.data.trainingCycleWeeks);
     setSiteSupervisors(snapshot.data.siteSupervisors);
     setJobTypes(snapshot.data.jobTypes);
@@ -341,9 +342,7 @@ export default function App() {
       const metrics = calculateMetrics();
       const metricsData = [
         [`Pipeline SQS: ${metrics.pipelineTotal.toLocaleString()}`],
-        [`Weekly Sales: ${metrics.weeklyIncome.toLocaleString()} SQS`],
         [`Weekly Production: ${metrics.weeklyOutflow.toLocaleString()} SQS`],
-        [`Net Weekly Change: ${metrics.netChange.toLocaleString()}`],
         [`Weekly Revenue: $${metrics.totalRevenue.toLocaleString()}`],
       ];
 
@@ -481,6 +480,12 @@ export default function App() {
     let weeksOfProductionByType = {};
     const metricsByType = {};
 
+    // Get SQS waiting values for each type
+    const sqsWaitingByType = {
+      shingles: sqsWaitingShingles,
+      metal: sqsWaitingMetal
+    };
+
     Object.entries(jobTypes).forEach(([key, type]) => {
       const activeCrews = type.crews;
       const production = activeCrews * type.sqsPerCrewWeekly;
@@ -489,14 +494,15 @@ export default function App() {
       totalProduction += production;
       totalRevenue += revenue;
 
-      // Estimate pipeline SQS by type (proportional to production rate)
-      const estimatedPipelineForType = sqsWaiting * (production / (totalProduction || 1));
-      totalPipelineByType[key] = estimatedPipelineForType;
+      // Use the SQS waiting for this specific type
+      const pipelineForType = sqsWaitingByType[key];
+      totalPipelineByType[key] = pipelineForType;
 
-      // Weeks of production for this type
-      weeksOfProductionByType[key] = production > 0 ? estimatedPipelineForType / production : 0;
+      // Weeks of production for this type (based on its own pipeline)
+      weeksOfProductionByType[key] = production > 0 ? pipelineForType / production : 0;
 
-      const totalCrewLeads = type.crewLeads + getReadySupers();
+      // Each crew has one lead, so totalCrewLeads = crews
+      const totalCrewLeads = activeCrews + getReadySupers();
       const { canRun, warning } = canRunJobType(key);
 
       metricsByType[key] = {
@@ -504,7 +510,7 @@ export default function App() {
         activeCrews,
         production,
         weeklyRevenue: revenue,
-        pipelineForType: estimatedPipelineForType,
+        pipelineForType,
         weeksForType: weeksOfProductionByType[key],
         totalCrewLeads,
         canRun,
@@ -518,11 +524,9 @@ export default function App() {
       totalProduction += type.crews * type.sqsPerCrewWeekly;
     });
 
-    // Pipeline calculation
-    const pipelineTotal = sqsWaiting;
-    const weeklyIncome = weeklySalesForecast;
+    // Pipeline calculation - total of both types
+    const pipelineTotal = sqsWaitingShingles + sqsWaitingMetal;
     const weeklyOutflow = totalProduction;
-    const netChange = weeklyIncome - weeklyOutflow;
     const weeksOfProduction = weeklyOutflow > 0 ? pipelineTotal / weeklyOutflow : 0;
 
     return {
@@ -530,9 +534,7 @@ export default function App() {
       totalProduction,
       totalRevenue,
       pipelineTotal,
-      weeklyIncome,
       weeklyOutflow,
-      netChange,
       weeksOfProduction,
       pipelineByType: totalPipelineByType,
       weeksOfProductionByType
@@ -638,29 +640,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Weekly Sales - CLICKABLE */}
-            <div
-              className={`metric-card clickable ${expandedMetric === 'sales' ? 'expanded' : ''}`}
-              onClick={() => setExpandedMetric(expandedMetric === 'sales' ? null : 'sales')}
-            >
-              <div className="metric-label">Weekly Sales Forecast</div>
-              <div className="metric-value">{metrics.weeklyIncome.toLocaleString()}</div>
-              <div className="metric-detail">Click for breakdown</div>
-
-              {expandedMetric === 'sales' && (
-                <div className="metric-detail-expanded">
-                  <div className="detail-item">
-                    <span className="detail-label">Shingles:</span>
-                    <span className="detail-value">{Math.round(metrics.weeklyIncome * 0.4).toLocaleString()} SQS</span>
-                  </div>
-                  <div className="detail-item">
-                    <span className="detail-label">Metal:</span>
-                    <span className="detail-value">{Math.round(metrics.weeklyIncome * 0.6).toLocaleString()} SQS</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Weekly Production - CLICKABLE */}
             <div
               className={`metric-card clickable ${expandedMetric === 'production' ? 'expanded' : ''}`}
@@ -705,19 +684,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Net Change */}
-            <div className={`metric-card ${metrics.netChange >= 0 ? 'positive' : 'negative'}`}>
-              <div
-                className="metric-label"
-                title="Weekly pipeline velocity: (Weekly Sales - Weekly Production). Positive = pipeline growing, Negative = pipeline shrinking"
-                style={{ cursor: 'help' }}
-              >
-                Net Weekly Change
-              </div>
-              <div className="metric-value">{metrics.netChange.toLocaleString()}</div>
-              <div className="metric-detail">{metrics.netChange > 0 ? '📈 Growing' : '📉 Declining'}</div>
             </div>
 
             {/* Revenue - CLICKABLE */}
@@ -864,11 +830,20 @@ export default function App() {
 
           <div className="input-grid">
             <div className="input-group">
-              <label>SQS Waiting To Be Installed</label>
+              <label>SQS Waiting - Shingles</label>
               <input
                 type="number"
-                value={sqsWaiting}
-                onChange={(e) => setSqsWaiting(Number(e.target.value))}
+                value={sqsWaitingShingles}
+                onChange={(e) => setSqsWaitingShingles(Number(e.target.value))}
+              />
+            </div>
+
+            <div className="input-group">
+              <label>SQS Waiting - Metal</label>
+              <input
+                type="number"
+                value={sqsWaitingMetal}
+                onChange={(e) => setSqsWaitingMetal(Number(e.target.value))}
               />
             </div>
 
@@ -931,30 +906,6 @@ export default function App() {
                     onChange={(e) => setJobTypes({
                       ...jobTypes,
                       [key]: {...type, crews: Number(e.target.value)}
-                    })}
-                  />
-                </div>
-
-                <div className="config-input">
-                  <label>Crew Leads For This Type</label>
-                  <input
-                    type="number"
-                    value={type.crewLeads}
-                    onChange={(e) => setJobTypes({
-                      ...jobTypes,
-                      [key]: {...type, crewLeads: Number(e.target.value)}
-                    })}
-                  />
-                </div>
-
-                <div className="config-input">
-                  <label>SQS Per Crew Lead (Weekly Capacity)</label>
-                  <input
-                    type="number"
-                    value={type.sqsPerCrewLead}
-                    onChange={(e) => setJobTypes({
-                      ...jobTypes,
-                      [key]: {...type, sqsPerCrewLead: Number(e.target.value)}
                     })}
                   />
                 </div>
