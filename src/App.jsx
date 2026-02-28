@@ -1012,71 +1012,276 @@ export default function App() {
           </section>
         )}
 
-        {/* NEW: 6-MONTH FORECAST SECTION */}
+        {/* FORECASTER SECTION - Complete redesign */}
         <section className="forecast-section">
-          <h2>6-Month Production Forecast</h2>
-          {plannedHires.length === 0 ? (
-            <p style={{ color: '#666', fontStyle: 'italic' }}>Click "Timeline" in the header to add crew hires and generate forecast</p>
-          ) : (
-            <div>
-              <div style={{ marginBottom: '20px' }}>
-                <h3>Planned Hires</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '10px' }}>
-                  {plannedHires.map(hire => (
-                    <div key={hire.id} style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
-                      <strong>{hire.quantity}x {hire.jobType || 'Supervisor'}</strong>
-                      <div style={{ fontSize: '12px', color: '#666', marginTop: '5px' }}>
-                        Hire: {new Date(hire.hireDate).toLocaleDateString()}<br/>
-                        Ready: {new Date(hire.readyDate).toLocaleDateString()}
-                      </div>
-                      <button
-                        style={{ marginTop: '8px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', backgroundColor: '#ff6b6b', color: 'white', border: 'none', borderRadius: '3px' }}
-                        onClick={() => removePlannedHire(hire.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+          <h2>Forecaster - Sales & Crew Planning</h2>
 
-              {sixMonthForecast.length > 0 && (
+          {/* 1. SALES PLANNING */}
+          <div style={{ marginBottom: '30px', padding: '20px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
+            <h3>📊 Sales Planning</h3>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ marginRight: '15px', fontWeight: 'bold' }}>Forecast Period:</label>
+              <button
+                onClick={() => setForecastPeriod('3-month')}
+                style={{
+                  marginRight: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: forecastPeriod === '3-month' ? '#0F3D2F' : '#ddd',
+                  color: forecastPeriod === '3-month' ? 'white' : 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                3 Months
+              </button>
+              <button
+                onClick={() => setForecastPeriod('6-month')}
+                style={{
+                  marginRight: '10px',
+                  padding: '8px 15px',
+                  backgroundColor: forecastPeriod === '6-month' ? '#0F3D2F' : '#ddd',
+                  color: forecastPeriod === '6-month' ? 'white' : 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                6 Months
+              </button>
+              <button
+                onClick={() => setForecastPeriod('12-month')}
+                style={{
+                  padding: '8px 15px',
+                  backgroundColor: forecastPeriod === '12-month' ? '#0F3D2F' : '#ddd',
+                  color: forecastPeriod === '12-month' ? 'white' : 'black',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                12 Months
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', backgroundColor: 'white' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#FF8C00', color: 'white' }}>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #ccc' }}>Week</th>
+                    <th style={{ padding: '10px', textAlign: 'center', borderBottom: '2px solid #ccc' }}>Shingles Sales (SQS)</th>
+                    <th style={{ padding: '10px', textAlign: 'center', borderBottom: '2px solid #ccc' }}>Metal Sales (SQS)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salesForecast.slice(0, forecastPeriod === '3-month' ? 13 : forecastPeriod === '6-month' ? 26 : 52).map((week, idx) => (
+                    <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#f9f9f9' : 'white', borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '10px' }}>W{idx}</td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          value={week.shingles}
+                          onChange={(e) => {
+                            const newForecast = [...salesForecast];
+                            newForecast[idx] = { ...newForecast[idx], shingles: Number(e.target.value) };
+                            setSalesForecast(newForecast);
+                          }}
+                          style={{ width: '80px', padding: '4px', textAlign: 'center' }}
+                        />
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          value={week.metal}
+                          onChange={(e) => {
+                            const newForecast = [...salesForecast];
+                            newForecast[idx] = { ...newForecast[idx], metal: Number(e.target.value) };
+                            setSalesForecast(newForecast);
+                          }}
+                          style={{ width: '80px', padding: '4px', textAlign: 'center' }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 2. CREW HIRING PLAN */}
+          <div style={{ marginBottom: '30px', padding: '20px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
+            <h3>👥 Crew Hiring Plan</h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+              <div>
+                <label style={{ fontSize: '12px' }}>Hire Date:</label>
+                <input
+                  type="date"
+                  value={newHireDate}
+                  onChange={(e) => setNewHireDate(e.target.value)}
+                  style={{ width: '100%', padding: '8px' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px' }}>Type:</label>
+                <select
+                  value={newHireType}
+                  onChange={(e) => setNewHireType(e.target.value)}
+                  style={{ width: '100%', padding: '8px' }}
+                >
+                  <option value="crew">Crew</option>
+                  <option value="supervisor">Supervisor</option>
+                </select>
+              </div>
+              {newHireType === 'crew' && (
                 <div>
-                  <h3>Weekly Forecast</h3>
-                  <div style={{ overflowX: 'auto', marginTop: '10px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#0F3D2F', color: 'white' }}>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ccc' }}>Week</th>
-                          <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #ccc' }}>Pipeline</th>
-                          <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #ccc' }}>Prod/Week</th>
-                          <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #ccc' }}>Net Change</th>
-                          <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #ccc' }}>Crews (S/M)</th>
-                          <th style={{ padding: '8px', textAlign: 'right', borderBottom: '1px solid #ccc' }}>Revenue</th>
-                          <th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ccc' }}>Notes</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sixMonthForecast.map((week, idx) => (
-                          <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#f9f9f9' : 'white', borderBottom: '1px solid #eee' }}>
-                            <td style={{ padding: '8px' }}>W{week.weekNumber}</td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>{week.pipeline.toLocaleString()}</td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>{week.weeklyOutflow.toLocaleString()}</td>
-                            <td style={{ padding: '8px', textAlign: 'right', color: week.netChange >= 0 ? '#2d6a52' : '#d32f2f' }}>
-                              {week.netChange > 0 ? '+' : ''}{week.netChange.toLocaleString()}
-                            </td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>{week.activeCrew.shingles}/{week.activeCrew.metal}</td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>${(week.totalRevenue / 1000).toFixed(0)}K</td>
-                            <td style={{ padding: '8px', fontSize: '11px', color: '#666' }}>{week.notes || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <label style={{ fontSize: '12px' }}>Job Type:</label>
+                  <select
+                    value={newHireJobType}
+                    onChange={(e) => setNewHireJobType(e.target.value)}
+                    style={{ width: '100%', padding: '8px' }}
+                  >
+                    <option value="shingles">Shingles</option>
+                    <option value="metal">Metal</option>
+                  </select>
                 </div>
               )}
+              <div>
+                <label style={{ fontSize: '12px' }}>Count:</label>
+                <input
+                  type="number"
+                  value={newHireCount}
+                  onChange={(e) => setNewHireCount(Number(e.target.value))}
+                  min="1"
+                  style={{ width: '100%', padding: '8px' }}
+                />
+              </div>
+              {newHireType === 'crew' && (
+                <>
+                  <div>
+                    <label style={{ fontSize: '12px' }}>Output/Week (SQS):</label>
+                    <input
+                      type="number"
+                      value={newHireOutputPerWeek}
+                      onChange={(e) => setNewHireOutputPerWeek(Number(e.target.value))}
+                      style={{ width: '100%', padding: '8px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '12px' }}>Training Weeks:</label>
+                    <select
+                      value={newHireTrainingWeeks}
+                      onChange={(e) => setNewHireTrainingWeeks(Number(e.target.value))}
+                      style={{ width: '100%', padding: '8px' }}
+                    >
+                      <option value="2">2 Weeks</option>
+                      <option value="3">3 Weeks</option>
+                      <option value="4">4 Weeks</option>
+                      <option value="6">6 Weeks</option>
+                      <option value="8">8 Weeks</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
-          )}
+
+            <button
+              onClick={addHire}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#FF8C00',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                marginBottom: '15px'
+              }}
+            >
+              + Add Hire
+            </button>
+
+            {hiringPlan.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', backgroundColor: 'white' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#0F3D2F', color: 'white' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>Hire Date</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Type</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Job Type</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Count</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Output/Wk</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Training Wks</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Ready Date</th>
+                      <th style={{ padding: '8px', textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hiringPlan.map((hire, idx) => (
+                      <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#f9f9f9' : 'white', borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '8px' }}>{new Date(hire.hireDate).toLocaleDateString()}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{hire.type}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{hire.jobType || '—'}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{hire.count}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{hire.outputPerWeek || '—'}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{hire.trainingWeeks}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{new Date(hire.readyDate).toLocaleDateString()}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          <button
+                            onClick={() => removeHire(hire.id)}
+                            style={{ padding: '4px 8px', backgroundColor: '#d32f2f', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* 3. PRODUCTION FORECAST */}
+          <div style={{ padding: '20px', backgroundColor: '#f5f5f5', borderRadius: '8px' }}>
+            <h3>📈 Production Forecast</h3>
+            {hiringPlan.length === 0 && salesForecast.every(w => w.shingles === 0 && w.metal === 0) ? (
+              <p style={{ color: '#666', fontStyle: 'italic' }}>Add sales plans and crew hires above to generate forecast</p>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', backgroundColor: 'white' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#0F3D2F', color: 'white' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>Week</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Shingles Sale</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Metal Sale</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Existing Prod</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>New Crew Prod</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Total Prod</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Pipeline</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Revenue</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {generateSixMonthForecast().map((week, idx) => (
+                      <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? '#f9f9f9' : 'white', borderBottom: '1px solid #eee' }}>
+                        <td style={{ padding: '8px' }}>W{week.weekNumber}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{week.plannedSalesShingles}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{week.plannedSalesMetal}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{week.existingProduction}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', color: '#FF8C00' }}>{week.newCrewProduction}</td>
+                        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>{week.totalProduction}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>{week.pipeline.toLocaleString()}</td>
+                        <td style={{ padding: '8px', textAlign: 'right' }}>${(week.totalRevenue / 1000).toFixed(1)}K</td>
+                        <td style={{ padding: '8px', fontSize: '10px', color: '#666' }}>{week.notes || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* NEW: FORECAST SNAPSHOTS SECTION */}
