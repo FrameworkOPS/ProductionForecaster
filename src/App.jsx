@@ -81,6 +81,7 @@ export default function App() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [showHiringModal, setShowHiringModal] = useState(false);
+  const [showTimelineModal, setShowTimelineModal] = useState(false);
   const [saveForecastName, setSaveForecastName] = useState('');
   const [sixMonthForecast, setSixMonthForecast] = useState([]);
 
