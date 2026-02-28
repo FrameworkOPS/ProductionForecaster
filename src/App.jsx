@@ -1027,6 +1027,7 @@ export default function App() {
                     <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #ccc' }}>Week</th>
                     <th style={{ padding: '10px', textAlign: 'center', borderBottom: '2px solid #ccc' }}>Shingles Sales (SQS)</th>
                     <th style={{ padding: '10px', textAlign: 'center', borderBottom: '2px solid #ccc' }}>Metal Sales (SQS)</th>
+                    <th style={{ padding: '10px', textAlign: 'center', borderBottom: '2px solid #ccc' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1056,6 +1057,33 @@ export default function App() {
                           }}
                           style={{ width: '80px', padding: '4px', textAlign: 'center' }}
                         />
+                      </td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        {idx > 0 && (
+                          <button
+                            onClick={() => {
+                              const newForecast = [...salesForecast];
+                              newForecast[idx] = {
+                                shingles: salesForecast[idx - 1].shingles,
+                                metal: salesForecast[idx - 1].metal
+                              };
+                              setSalesForecast(newForecast);
+                            }}
+                            style={{
+                              padding: '6px 12px',
+                              backgroundColor: '#FF8C00',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              whiteSpace: 'nowrap'
+                            }}
+                            title="Copy values from the previous week"
+                          >
+                            📋 Copy
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
