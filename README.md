@@ -44,3 +44,35 @@ A clean, simple interface that:
 3. Tracks pipeline automatically
 4. Manages crew training schedules
 5. Updates metrics in real-time
+
+## Deployment Options
+
+### Option 1: Docker (Recommended)
+```bash
+docker-compose up -d
+```
+Access at: **http://localhost:3000**
+
+### Option 2: Netlify (Automatic CI/CD)
+GitHub Actions automatically deploys to Netlify on push to main.
+Check deployment status at: https://github.com/FrameworkOPS/ProductionForecaster/actions
+
+### Option 3: Vercel
+```bash
+npm install -g vercel
+vercel
+```
+
+## Troubleshooting
+
+### Blank Screen on Deployment
+**Issue**: App shows blank screen after deployment
+**Solution**: The build process automatically includes all assets (logo, CSS, JavaScript)
+- Verify logo file exists in `public/assets/skyright-logo.png`
+- Clear browser cache (Ctrl+Shift+Delete or Cmd+Shift+Delete)
+- Hard refresh the page (Ctrl+F5 or Cmd+Shift+R)
+
+### Browser Console Errors
+Check browser Developer Tools (F12) → Console tab for JavaScript errors
+- Clear site data: Settings → Privacy → Clear browsing data
+- Check that the base URL matches your deployment (e.g., localhost:3000 or production URL)
