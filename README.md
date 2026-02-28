@@ -2,6 +2,8 @@
 
 A focused, practical tool for roofing production forecasting with key metrics and pipeline management.
 
+**🚀 Live Demo**: https://FrameworkOPS.github.io/ProductionForecaster/
+
 ## Features
 
 ✅ **Dashboard Metrics:**
