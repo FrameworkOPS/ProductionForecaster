@@ -84,7 +84,7 @@ export default function App() {
   const [saveForecastName, setSaveForecastName] = useState('');
   const [sixMonthForecast, setSixMonthForecast] = useState([]);
 
-  // Update forecast whenever hiring plan or sales forecast changes
+  // Update forecast whenever hiring plan, sales forecast, or job types change
   useEffect(() => {
     try {
       const forecast = generateSixMonthForecast();
@@ -92,7 +92,7 @@ export default function App() {
     } catch (error) {
       console.error('Error generating forecast:', error);
     }
-  }, [hiringPlan, salesForecast]);
+  }, [hiringPlan, salesForecast, jobTypes, sqsWaiting]);
 
   // Helper functions (must be defined before calculateMetrics)
   const getReadyCrews = (type) => {
@@ -252,8 +252,6 @@ export default function App() {
         totalRevenue: Math.round(totalRevenue),
         notes
       });
-
-      lastWeekDate = weekDate;
     }
 
     return forecast;
