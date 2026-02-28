@@ -101,7 +101,8 @@ export default function App() {
 
   const canRunJobType = (jobTypeKey) => {
     const type = jobTypes[jobTypeKey];
-    const totalCrewLeads = type.crewLeads + getReadySupers();
+    // Each crew has one lead, so totalCrewLeads = crews + additional supervisors
+    const totalCrewLeads = type.crews + getReadySupers();
 
     if (type.requiresCrewLead && totalCrewLeads === 0) {
       return { canRun: false, warning: true };
@@ -801,13 +802,8 @@ export default function App() {
                 </div>
 
                 <div className="job-metric">
-                  <span>Crew Leads Assigned</span>
-                  <strong>{type.totalCrewLeads}</strong>
-                </div>
-
-                <div className="job-metric">
-                  <span>SQS Per Crew Lead/Week</span>
-                  <strong>{type.sqsPerCrewLead}</strong>
+                  <span>Crews (each with 1 lead)</span>
+                  <strong>{type.crews}</strong>
                 </div>
 
                 <div className="job-metric">
