@@ -164,3 +164,98 @@ export function daysBetween(startDate: Date | string, endDate: Date | string): n
 
   return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
 }
+
+/**
+ * Calculate lead time for a pipeline item
+ * @param addedDate - When item was added to pipeline
+ * @param estimatedCompletionDays - Estimated days to complete
+ * @param currentDate - Current date (default: today)
+ * @returns Lead time in days
+ */
+export function calculateLeadTime(
+  addedDate: Date | string,
+  estimatedCompletionDays: number,
+  currentDate: Date = new Date()
+): number {
+  const daysElapsed = daysBetween(addedDate, currentDate);
+  return daysElapsed + estimatedCompletionDays;
+}
+
+/**
+ * Calculate queue growth: (pipeline + sales forecast) - production rate
+ * @param pipelineSQs - Current square footage in pipeline
+ * @param salesForecastSQs - Projected sales this period
+ * @param productionRateSQs - Expected production rate
+ * @returns Queue growth (positive = backlog increase, negative = reduction)
+ */
+export function calculateQueueGrowth(
+  pipelineSQs: number,
+  salesForecastSQs: number,
+  productionRateSQs: number
+): number {
+  return pipelineSQs + salesForecastSQs - productionRateSQs;
+}
+
+/**
+ * Calculate capacity utilization
+ * @param actualProductionSQs - Actual square footage produced this period
+ * @param crewCapacitySQs - Total crew capacity for period
+ * @returns Utilization as decimal between 0.0 and 1.0
+ */
+export function calculateCapacityUtilization(
+  actualProductionSQs: number,
+  crewCapacitySQs: number
+): number {
+  if (crewCapacitySQs === 0) {
+    return 0.0;
+  }
+
+  const utilization = actualProductionSQs / crewCapacitySQs;
+  // Cap at 1.0 (100%) even if production exceeds capacity
+  return Math.min(utilization, 1.0);
+}
+
+/**
+ * Detect production bottleneck based on queue growth trend
+ * @param currentQueueGrowth - Current period queue growth
+ * @param previousQueueGrowth - Previous period queue growth (nullable)
+ * @param capacityUtilization - Current capacity utilization (0.0-1.0)
+ * @returns Tuple of [bottleneckDetected, bottleneckReason]
+ */
+export function detectProductionBottleneck(
+  currentQueueGrowth: number,
+  previousQueueGrowth: number | null,
+  capacityUtilization: number
+): [boolean, string | null] {
+  // Check for sustained queue growth (2+ consecutive periods)
+  if (currentQueueGrowth > 0 && previousQueueGrowth !== null && previousQueueGrowth > 0) {
+    return [true, 'Queue backlog building for 2+ consecutive weeks'];
+  }
+
+  // Check for high capacity utilization
+  if (capacityUtilization >= 0.9) {
+    return [true, 'Capacity at or above 90% utilization'];
+  }
+
+  // Check for sustained high queue (even if not growing)
+  if (currentQueueGrowth > 100) {
+    // Arbitrary threshold: > 100 SQs queued
+    return [true, 'Large queue backlog detected'];
+  }
+
+  return [false, null];
+}
+
+/**
+ * Calculate production rate based on historical actuals
+ * @param historicalData - Array of production SQs for past periods
+ * @returns Average production rate
+ */
+export function calculateAverageProductionRate(historicalData: number[]): number {
+  if (historicalData.length === 0) {
+    return 0;
+  }
+
+  const sum = historicalData.reduce((acc, val) => acc + val, 0);
+  return sum / historicalData.length;
+}
