@@ -4,7 +4,7 @@
   "description": "Production Forecaster - Roofing Business Management",
   "main": "skyright-forecaster/dist/index.js",
   "scripts": {
-    "build": "cd skyright-forecaster && npm install && npm run build",
+    "build": "cd skyright-forecaster && npm ci && npm run build",
     "start": "cd skyright-forecaster && npm start"
   },
   "engines": {
