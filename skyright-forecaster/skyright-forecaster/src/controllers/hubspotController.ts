@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { query } from '../config/database';
 import HubSpotService from '../services/hubspotService';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 export const initiateOAuth = asyncHandler(async (req: Request, res: Response) => {
   const clientId = process.env.HUBSPOT_CLIENT_ID;
@@ -80,7 +80,7 @@ export const syncJobs = asyncHandler(async (req: Request, res: Response) => {
       `INSERT INTO audit_log (id, user_id, action, entity_type, new_values, timestamp)
        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
       [
-        uuidv4(),
+        await getUUID(),
         req.user.userId,
         'SYNC',
         'jobs',

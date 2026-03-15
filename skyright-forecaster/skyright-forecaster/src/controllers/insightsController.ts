@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { query } from '../config/database';
 import ClaudeService from '../services/claudeService';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 const claudeService = new ClaudeService();
 
@@ -43,7 +43,7 @@ export const generateInsights = asyncHandler(async (req: Request, res: Response)
     });
 
     // Save insights to database
-    const insightId = uuidv4();
+    const insightId = await getUUID();
     await query(
       `INSERT INTO insights (id, forecast_id, summary, recommendations, risks, opportunities, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 interface JobData {
   jobId: string;
@@ -57,7 +57,7 @@ export const createJob = asyncHandler(async (req: Request<{}, {}, JobData>, res:
     throw new AppError('Missing required fields', 400);
   }
 
-  const id = uuidv4();
+  const id = await getUUID();
   const result = await query(
     `INSERT INTO jobs (id, job_id, install_date, estimated_duration, crew_size, revenue, customer_name, job_address, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)

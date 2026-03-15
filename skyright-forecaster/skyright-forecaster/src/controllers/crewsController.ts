@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 interface CrewRequest {
   crew_name: string;
@@ -148,7 +148,7 @@ export const createCrew = asyncHandler(async (req: Request<{}, {}, CrewRequest>,
   const defaultRevenue = crew_type === 'shingle' ? 600 : 1000;
   const finalRevenuePerSq = revenue_per_sq ?? defaultRevenue;
 
-  const crewId = uuidv4();
+  const crewId = await getUUID();
 
   try {
     await query(

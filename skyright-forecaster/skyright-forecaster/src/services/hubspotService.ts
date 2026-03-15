@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { query } from '../config/database';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 interface HubSpotJob {
   id: string;
@@ -146,7 +146,7 @@ export class HubSpotService {
              (id, job_id, hubspot_id, install_date, estimated_duration, crew_size, revenue, customer_name, job_address, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
             [
-              uuidv4(),
+              await getUUID(),
               mappedJob.jobId,
               hubspotJob.id,
               mappedJob.installDate,

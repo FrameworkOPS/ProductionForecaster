@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 interface ParameterData {
   currentProductionRate: number;
@@ -60,7 +60,7 @@ export const updateParameters = asyncHandler(async (req: Request<{}, {}, Paramet
     throw new AppError('Missing required fields', 400);
   }
 
-  const id = uuidv4();
+  const id = await getUUID();
   const result = await query(
     `INSERT INTO production_parameters
      (id, current_production_rate, ramp_up_time_days, crew_capacity, max_concurrent_jobs, seasonal_adjustment, notes, updated_by)

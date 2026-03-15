@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 
 interface CustomProjectRequest {
   crew_id: string;
@@ -137,7 +137,7 @@ export const createCustomProject = asyncHandler(
       throw new AppError('start_date must be before end_date', 400);
     }
 
-    const projectId = uuidv4();
+    const projectId = await getUUID();
 
     try {
       await query(

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { v4 as uuidv4 } from 'uuid';
+import { getUUID } from '../utils/uuid';
 import {
   calculateCrewRampUpMultiplier,
   calculateCrewRampDownMultiplier,
@@ -172,7 +172,7 @@ export const generateForecast = asyncHandler(async (req: Request<{}, {}, Forecas
 
     const bottleneckDetected = totalJobs > params.max_concurrent_jobs || totalCrewMultiplier < 0.5;
 
-    const forecastId = uuidv4();
+    const forecastId = await getUUID();
 
     // Save forecast
     await query(
@@ -203,13 +203,14 @@ export const generateForecast = asyncHandler(async (req: Request<{}, {}, Forecas
       const completionDate = new Date(forecastDate);
       completionDate.setDate(completionDate.getDate() + estimatedCompletionDays);
 
+      const detailId = await getUUID();
       await query(
         `INSERT INTO forecast_details
          (id, forecast_id, job_id, crew_id, predicted_completion_date, completion_probability,
           ramp_up_multiplier, ramp_down_multiplier, blocked_by_project, risk_flag)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
-          uuidv4(),
+          detailId,
           forecastId,
           job.id,
           job.crew_id || null,
