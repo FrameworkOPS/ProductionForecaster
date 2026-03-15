@@ -80,8 +80,13 @@ process.on('SIGINT', async () => {
 async function startServer() {
   try {
     console.log('Initializing database...');
-    await initializeDatabase();
-    console.log('Database initialized successfully');
+    try {
+      await initializeDatabase();
+      console.log('✅ Database initialized successfully');
+    } catch (dbError) {
+      console.warn('⚠️  Database initialization failed (will retry on next request):', (dbError as Error).message);
+      console.warn('⚠️  Proceeding without database - configure DATABASE_URL to enable database features');
+    }
 
     app.listen(PORT, () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
