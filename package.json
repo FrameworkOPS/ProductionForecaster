@@ -1,0 +1,13 @@
+{
+  "name": "production-forecaster",
+  "version": "1.0.0",
+  "description": "Production Forecaster - Roofing Business Management",
+  "main": "skyright-forecaster/dist/index.js",
+  "scripts": {
+    "start": "bash start.sh",
+    "build": "cd skyright-forecaster && npm run build"
+  },
+  "engines": {
+    "node": "18"
+  }
+}
