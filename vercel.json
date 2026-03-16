@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "cd skyright-forecaster/frontend && tsc && vite build",
+  "buildCommand": "npm run build",
   "outputDirectory": "skyright-forecaster/frontend/dist",
   "framework": "vite",
   "env": {
