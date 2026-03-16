@@ -1,6 +1,6 @@
 {
   "name": "production-forecaster",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Production Forecaster - Roofing Business Management",
   "main": "skyright-forecaster/dist/index.js",
   "scripts": {

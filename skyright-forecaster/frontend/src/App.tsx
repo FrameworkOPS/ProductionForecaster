@@ -3,6 +3,7 @@ import Navigation from './components/Navigation'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 
+// Production Forecaster - Roofing Business Management
 function App() {
   return (
     <Router>
