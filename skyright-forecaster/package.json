@@ -5,9 +5,10 @@
   "main": "skyright-forecaster/dist/index.js",
   "scripts": {
     "start": "bash start.sh",
-    "build": "cd skyright-forecaster && npm run build"
+    "build": "cd frontend && npm install && npm run build",
+    "dev": "cd frontend && npm run dev"
   },
   "engines": {
-    "node": "18"
+    "node": "20"
   }
 }
