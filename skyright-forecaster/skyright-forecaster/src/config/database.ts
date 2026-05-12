@@ -250,6 +250,86 @@ export async function initializeDatabase(): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS uq_metrics_snapshots_week_type ON metrics_snapshots(metric_week, job_type);
     `);
 
+    // Estimating tool tables
+    await query(`
+      CREATE TABLE IF NOT EXISTS estimate_projects (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        project_address VARCHAR(500),
+        gc_name VARCHAR(255),
+        bid_date DATE,
+        project_type VARCHAR(50) DEFAULT 'roofing',
+        status VARCHAR(50) DEFAULT 'draft',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS estimate_documents (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES estimate_projects(id) ON DELETE CASCADE,
+        file_name VARCHAR(500) NOT NULL,
+        file_path VARCHAR(1000) NOT NULL,
+        doc_type VARCHAR(50),
+        parsed BOOLEAN DEFAULT false,
+        parsed_data JSONB,
+        parsed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS estimate_specs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES estimate_projects(id) ON DELETE CASCADE,
+        section VARCHAR(255),
+        spec_type VARCHAR(100),
+        description TEXT,
+        value TEXT,
+        source_doc_id UUID REFERENCES estimate_documents(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS estimate_line_items (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES estimate_projects(id) ON DELETE CASCADE,
+        category VARCHAR(100),
+        description VARCHAR(500) NOT NULL,
+        quantity DECIMAL(12,2),
+        unit VARCHAR(50),
+        unit_price DECIMAL(10,2),
+        line_total DECIMAL(12,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+        waste_factor DECIMAL(5,2) DEFAULT 0,
+        notes TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS estimate_concerns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES estimate_projects(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        severity VARCHAR(50) DEFAULT 'medium',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS estimate_takeoffs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES estimate_projects(id) ON DELETE CASCADE,
+        label VARCHAR(255) NOT NULL,
+        value DECIMAL(12,2),
+        unit VARCHAR(50),
+        category VARCHAR(100),
+        source VARCHAR(100),
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_estimate_docs_project ON estimate_documents(project_id);
+      CREATE INDEX IF NOT EXISTS idx_estimate_specs_project ON estimate_specs(project_id);
+      CREATE INDEX IF NOT EXISTS idx_estimate_line_items_project ON estimate_line_items(project_id);
+      CREATE INDEX IF NOT EXISTS idx_estimate_concerns_project ON estimate_concerns(project_id);
+      CREATE INDEX IF NOT EXISTS idx_estimate_takeoffs_project ON estimate_takeoffs(project_id);
+    `);
+
     // Migrations: add columns to existing tables if they don't exist
     await query(`
       ALTER TABLE crews ADD COLUMN IF NOT EXISTS weekly_sq_capacity DECIMAL(10, 2)
