@@ -23,6 +23,9 @@ WORKDIR /app
 COPY --from=backend-builder /app/dist ./dist
 COPY --from=backend-builder /app/node_modules ./node_modules
 COPY --from=backend-builder /app/package.json ./package.json
+# Python script for PDF→image conversion (pdfParserService resolves to /app/scripts/)
+COPY --from=backend-builder /app/src/scripts ./scripts
+RUN mkdir -p /app/uploads
 # Backend: path.join(__dirname='/app/dist', '../../frontend/dist') => /frontend/dist
 COPY --from=frontend-builder /build/dist /frontend/dist
 EXPOSE 3000
