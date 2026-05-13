@@ -10,6 +10,7 @@ import {
   EstimateDetail as Detail,
   EstimateLineItem, EstimateSpec, EstimateConcern, EstimateTakeoff, EstimateDocument,
 } from '../services/estimatingApi'
+import { repriceProject } from '../services/pricesApi'
 
 type Tab = 'documents' | 'takeoffs' | 'specs' | 'line-items' | 'concerns'
 
@@ -653,6 +654,23 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
   const [form, setForm] = useState({ category: 'Roofing', description: '', quantity: '', unit: 'SF', unit_price: '', waste_factor: '0', notes: '' })
   const [editing, setEditing] = useState<string | null>(null)
   const [editVals, setEditVals] = useState<any>({})
+  const [repricing, setRepricing] = useState(false)
+  const [repriceMsg, setRepriceMsg] = useState('')
+  const flaggedCount = items.filter(li => li.price_flagged).length
+
+  async function handleReprice() {
+    setRepricing(true)
+    setRepriceMsg('')
+    try {
+      const result = await repriceProject(projectId)
+      setRepriceMsg(`Re-priced ${result.updated} item(s). ${result.stillFlagged} still need prices.`)
+      onRefresh()
+    } catch (e: any) {
+      setRepriceMsg(e.response?.data?.message || e.message)
+    } finally {
+      setRepricing(false)
+    }
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -692,18 +710,34 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
       <div className="flex justify-between items-center">
         <div>
           <h3 className="font-semibold text-gray-900">Bid Line Items</h3>
-          <p className="text-sm text-gray-400 mt-0.5">{items.length} items</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {items.length} items
+            {flaggedCount > 0 && (
+              <span className="ml-2 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium">
+                ⚠ {flaggedCount} need price review
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <div className="text-xs text-gray-400 uppercase tracking-wide">Total</div>
             <div className="text-xl font-bold text-teal-700">{fmtCurrency(total)}</div>
           </div>
+          <button
+            onClick={handleReprice}
+            disabled={repricing}
+            className="bg-white border border-teal-700 text-teal-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-teal-50 disabled:opacity-50 transition"
+            title="Re-run price lookup against the price database"
+          >
+            {repricing ? 'Re-pricing…' : 'Re-price'}
+          </button>
           <button onClick={() => setAdding(true)} className="bg-teal-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-teal-800 transition">
             + Add Item
           </button>
         </div>
       </div>
+      {repriceMsg && <div className="bg-teal-50 border border-teal-200 text-teal-800 rounded-lg px-3 py-2 text-sm">{repriceMsg}</div>}
 
       {items.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No line items yet. Parse documents to auto-populate, or add items manually.</div>
@@ -724,8 +758,9 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
               <div className="bg-gray-100 px-4 py-2 text-xs font-bold text-gray-600 uppercase tracking-wider">{cat}</div>
               {items.filter(li => li.category === cat).map((li, i) => {
                 const lineTotal = parseFloat(String(li.quantity || 0)) * parseFloat(String(li.unit_price || 0))
+                const rowBg = li.price_flagged ? 'bg-amber-50' : (i % 2 === 0 ? '' : 'bg-gray-50')
                 return (
-                  <div key={li.id} className={`grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm ${i % 2 === 0 ? '' : 'bg-gray-50'} border-t border-gray-100`}>
+                  <div key={li.id} className={`grid grid-cols-12 gap-2 px-4 py-2.5 items-center text-sm ${rowBg} border-t border-gray-100`}>
                     {editing === li.id ? (
                       <>
                         <div className="col-span-4">
@@ -751,7 +786,13 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
                     ) : (
                       <>
                         <div className="col-span-4 text-gray-800">
+                          {li.price_flagged && (
+                            <span className="text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded text-xs font-bold mr-2" title="Not found in price database — review unit price">
+                              ⚠ NO PRICE
+                            </span>
+                          )}
                           {li.description}
+                          {li.material_key && <p className="text-xs text-gray-400 font-mono mt-0.5">{li.material_key}</p>}
                           {li.notes && <p className="text-xs text-gray-400 mt-0.5">{li.notes}</p>}
                         </div>
                         <div className="col-span-2 text-right font-mono text-gray-700">

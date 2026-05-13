@@ -63,6 +63,8 @@ export interface EstimateLineItem {
   waste_factor: number;
   notes: string;
   sort_order: number;
+  material_key?: string;
+  price_flagged?: boolean;
 }
 
 export interface EstimateConcern {

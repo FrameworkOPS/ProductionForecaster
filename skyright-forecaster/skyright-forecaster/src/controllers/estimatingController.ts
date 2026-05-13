@@ -1,10 +1,35 @@
 import { Request, Response } from 'express';
-import path from 'path';
 import fs from 'fs';
 import { query } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
-import { parsePdfDocument } from '../services/pdfParserService';
+import { parsePdfBuffer, LineItemSuggestion } from '../services/pdfParserService';
 import { generateBidPdf } from '../services/bidGeneratorService';
+
+// Look up a price for a single line item. Returns { unit_price, flagged }.
+// Strategy: try material_prices first, then labor_prices, then a description-substring fallback.
+async function lookupLineItemPrice(li: LineItemSuggestion): Promise<{ unit_price: number; flagged: boolean }> {
+  const key = (li.material_key || '').trim();
+  if (key) {
+    const mat = await query('SELECT unit_cost FROM material_prices WHERE material_key = $1', [key]);
+    if (mat.rows[0]) return { unit_price: parseFloat(mat.rows[0].unit_cost), flagged: false };
+    const lab = await query('SELECT unit_cost FROM labor_prices WHERE material_key = $1', [key]);
+    if (lab.rows[0]) return { unit_price: parseFloat(lab.rows[0].unit_cost), flagged: false };
+  }
+  // Description-substring fallback: pull tokens from description and look for any material_key that contains those tokens
+  const desc = (li.description || '').toUpperCase();
+  if (desc) {
+    const fuzzy = await query(
+      `SELECT unit_cost FROM material_prices
+       WHERE POSITION(SPLIT_PART(material_key, '_', 1) IN $1) > 0
+         AND POSITION(SPLIT_PART(material_key, '_', 2) IN $1) > 0
+       ORDER BY LENGTH(material_key) DESC LIMIT 1`,
+      [desc]
+    );
+    if (fuzzy.rows[0]) return { unit_price: parseFloat(fuzzy.rows[0].unit_cost), flagged: false };
+  }
+  // Not found — keep whatever price Claude suggested (often 0) and flag for review
+  return { unit_price: li.unit_price || 0, flagged: true };
+}
 
 // ── PROJECTS ─────────────────────────────────────────────────────────────────
 
@@ -27,7 +52,7 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const [project, docs, specs, lineItems, concerns, takeoffs] = await Promise.all([
     query('SELECT * FROM estimate_projects WHERE id = $1', [id]),
-    query('SELECT * FROM estimate_documents WHERE project_id = $1 ORDER BY created_at', [id]),
+    query('SELECT id, project_id, file_name, doc_type, parsed, parsed_at, created_at FROM estimate_documents WHERE project_id = $1 ORDER BY created_at', [id]),
     query('SELECT * FROM estimate_specs WHERE project_id = $1 ORDER BY section, spec_type', [id]),
     query('SELECT * FROM estimate_line_items WHERE project_id = $1 ORDER BY category, sort_order', [id]),
     query('SELECT * FROM estimate_concerns WHERE project_id = $1 ORDER BY severity DESC, created_at', [id]),
@@ -102,10 +127,15 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
 
   if (!file) throw new AppError('No file uploaded', 400);
 
+  // Store PDF bytes in the DB so parse still works after an ephemeral container restart
+  // (Railway/Heroku-style ephemeral disk wipes /uploads on every redeploy).
+  const bytes = fs.readFileSync(file.path);
+
   const result = await query(
-    `INSERT INTO estimate_documents (project_id, file_name, file_path, doc_type)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [projectId, file.originalname, file.path, docType]
+    `INSERT INTO estimate_documents (project_id, file_name, file_path, doc_type, file_bytes)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, project_id, file_name, doc_type, parsed, parsed_at, created_at`,
+    [projectId, file.originalname, file.path, docType, bytes]
   );
   res.status(201).json({ success: true, data: result.rows[0] });
 });
@@ -114,23 +144,38 @@ export const parseDocument = asyncHandler(async (req: Request, res: Response) =>
   const { id: projectId, docId } = req.params;
 
   const docResult = await query(
-    'SELECT * FROM estimate_documents WHERE id = $1 AND project_id = $2',
+    'SELECT id, project_id, file_name, file_path, doc_type, file_bytes FROM estimate_documents WHERE id = $1 AND project_id = $2',
     [docId, projectId]
   );
   if (!docResult.rows[0]) throw new AppError('Document not found', 404);
 
   const doc = docResult.rows[0];
-  if (!fs.existsSync(doc.file_path)) throw new AppError('File not found on disk', 404);
 
-  const parsed = await parsePdfDocument(doc.file_path);
+  // Prefer DB-stored bytes (survives ephemeral restarts); fall back to disk path
+  let buffer: Buffer | null = null;
+  if (doc.file_bytes) {
+    buffer = Buffer.isBuffer(doc.file_bytes) ? doc.file_bytes : Buffer.from(doc.file_bytes);
+  } else if (doc.file_path && fs.existsSync(doc.file_path)) {
+    buffer = fs.readFileSync(doc.file_path);
+    // Backfill bytes for next time
+    try {
+      await query('UPDATE estimate_documents SET file_bytes = $1 WHERE id = $2', [buffer, docId]);
+    } catch {}
+  }
+  if (!buffer) {
+    throw new AppError(
+      'Original PDF is no longer available on the server. Please re-upload the document and parse again.',
+      410
+    );
+  }
 
-  // Store parsed data on the document
+  const parsed = await parsePdfBuffer(buffer);
+
   await query(
     'UPDATE estimate_documents SET parsed = true, parsed_data = $1, parsed_at = NOW(), doc_type = $2 WHERE id = $3',
     [JSON.stringify(parsed), parsed.docType, docId]
   );
 
-  // Upsert takeoffs
   if (parsed.takeoffs?.length) {
     for (let i = 0; i < parsed.takeoffs.length; i++) {
       const t = parsed.takeoffs[i];
@@ -142,7 +187,6 @@ export const parseDocument = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  // Upsert specs
   if (parsed.specs?.length) {
     for (const s of parsed.specs) {
       await query(
@@ -153,19 +197,25 @@ export const parseDocument = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  // Upsert line items
+  let flaggedCount = 0;
   if (parsed.lineItems?.length) {
     for (let i = 0; i < parsed.lineItems.length; i++) {
       const li = parsed.lineItems[i];
+      const priced = await lookupLineItemPrice(li);
+      if (priced.flagged) flaggedCount++;
       await query(
-        `INSERT INTO estimate_line_items (project_id, category, description, quantity, unit, unit_price, waste_factor, notes, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [projectId, li.category, li.description, li.quantity, li.unit, li.unit_price, li.waste_factor, li.notes, i]
+        `INSERT INTO estimate_line_items
+           (project_id, category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, material_key, price_flagged)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          projectId, li.category, li.description, li.quantity, li.unit,
+          priced.unit_price, li.waste_factor, li.notes, i,
+          li.material_key || null, priced.flagged,
+        ]
       );
     }
   }
 
-  // Upsert concerns
   if (parsed.concerns?.length) {
     for (const c of parsed.concerns) {
       await query(
@@ -176,7 +226,15 @@ export const parseDocument = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  res.json({ success: true, data: parsed });
+  res.json({
+    success: true,
+    data: {
+      ...parsed,
+      flagged_line_item_count: flaggedCount,
+      summary: parsed.summary +
+        (flaggedCount > 0 ? ` ⚠️ ${flaggedCount} line item(s) need price review — not found in price database.` : ''),
+    },
+  });
 });
 
 export const deleteDocument = asyncHandler(async (req: Request, res: Response) => {
@@ -193,20 +251,33 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
 
 export const createLineItem = asyncHandler(async (req: Request, res: Response) => {
   const { id: projectId } = req.params;
-  const { category, description, quantity, unit, unit_price, waste_factor, notes, sort_order } = req.body;
+  const { category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, material_key } = req.body;
   if (!description) throw new AppError('Description is required', 400);
 
+  // If a material_key is provided, look up price + clear the flag
+  let resolvedPrice = unit_price || 0;
+  let flagged = false;
+  if (material_key) {
+    const priced = await lookupLineItemPrice({
+      description, quantity, unit, unit_price: resolvedPrice, waste_factor, notes, sort_order, material_key,
+      category,
+    } as LineItemSuggestion);
+    resolvedPrice = priced.unit_price;
+    flagged = priced.flagged;
+  }
+
   const result = await query(
-    `INSERT INTO estimate_line_items (project_id, category, description, quantity, unit, unit_price, waste_factor, notes, sort_order)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [projectId, category, description, quantity || 0, unit, unit_price || 0, waste_factor || 0, notes, sort_order || 0]
+    `INSERT INTO estimate_line_items
+       (project_id, category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, material_key, price_flagged)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [projectId, category, description, quantity || 0, unit, resolvedPrice, waste_factor || 0, notes, sort_order || 0, material_key || null, flagged]
   );
   res.status(201).json({ success: true, data: result.rows[0] });
 });
 
 export const updateLineItem = asyncHandler(async (req: Request, res: Response) => {
   const { itemId } = req.params;
-  const { category, description, quantity, unit, unit_price, waste_factor, notes, sort_order } = req.body;
+  const { category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, material_key, price_flagged } = req.body;
 
   const result = await query(
     `UPDATE estimate_line_items SET
@@ -217,9 +288,11 @@ export const updateLineItem = asyncHandler(async (req: Request, res: Response) =
       unit_price = COALESCE($5, unit_price),
       waste_factor = COALESCE($6, waste_factor),
       notes = COALESCE($7, notes),
-      sort_order = COALESCE($8, sort_order)
-    WHERE id = $9 RETURNING *`,
-    [category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, itemId]
+      sort_order = COALESCE($8, sort_order),
+      material_key = COALESCE($9, material_key),
+      price_flagged = COALESCE($10, price_flagged)
+    WHERE id = $11 RETURNING *`,
+    [category, description, quantity, unit, unit_price, waste_factor, notes, sort_order, material_key, price_flagged, itemId]
   );
   if (!result.rows[0]) throw new AppError('Line item not found', 404);
   res.json({ success: true, data: result.rows[0] });

@@ -4,6 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/estimating', label: 'Estimating' },
+  { to: '/prices', label: 'Price DB' },
 ]
 
 export default function Navigation() {
