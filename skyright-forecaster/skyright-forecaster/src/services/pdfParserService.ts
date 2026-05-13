@@ -4,10 +4,10 @@ import { PDFDocument } from 'pdf-lib';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Anthropic PDF document limits: 32 MB and 100 pages per request.
-// Stay well under both — large plan sets get split into chunks.
-const MAX_CHUNK_BYTES = 28 * 1024 * 1024;
-const MAX_CHUNK_PAGES = 40;
+// Anthropic accepts up to ~32 MB per request. base64 inflates the PDF by ~33%,
+// so cap binary chunk size well below that to leave headroom for the prompt & overhead.
+const MAX_CHUNK_BYTES = 18 * 1024 * 1024;
+const MAX_CHUNK_PAGES = 30;
 
 interface ParsedDocument {
   docType: 'roofscope' | 'sidingscope' | 'spec_sheet' | 'plan_set' | 'unknown';
@@ -132,34 +132,42 @@ export async function parsePdfBuffer(buffer: Buffer): Promise<ParsedDocument> {
 }
 
 async function splitPdf(buffer: Buffer): Promise<Buffer[]> {
-  if (buffer.byteLength <= MAX_CHUNK_BYTES) {
-    // Even if under size cap, page count might exceed 100 — inspect to be sure
-    try {
-      const src = await PDFDocument.load(buffer, { ignoreEncryption: true });
-      if (src.getPageCount() <= MAX_CHUNK_PAGES) return [buffer];
-      return splitByPages(src);
-    } catch {
-      // If we can't load it, hand the original buffer to Claude — let the API surface the real error
-      return [buffer];
+  let src: PDFDocument;
+  try {
+    src = await PDFDocument.load(buffer, { ignoreEncryption: true });
+  } catch {
+    // Can't load — hand the original buffer over and let the API surface a clearer error
+    return [buffer];
+  }
+  const totalPages = src.getPageCount();
+  if (totalPages <= MAX_CHUNK_PAGES && buffer.byteLength <= MAX_CHUNK_BYTES) return [buffer];
+
+  // Pick a page budget that also keeps each chunk under the byte cap
+  const avgBytesPerPage = buffer.byteLength / totalPages;
+  const pagesByBytes = Math.max(1, Math.floor(MAX_CHUNK_BYTES / avgBytesPerPage));
+  const startingPagesPerChunk = Math.max(1, Math.min(MAX_CHUNK_PAGES, pagesByBytes));
+
+  const chunks: Buffer[] = [];
+  for (let start = 0; start < totalPages; start += startingPagesPerChunk) {
+    const end = Math.min(start + startingPagesPerChunk, totalPages);
+    const slice = await extractPages(src, start, end);
+    // Belt-and-braces: if a chunk is still oversize (heavy graphics), halve recursively
+    if (slice.byteLength > MAX_CHUNK_BYTES && end - start > 1) {
+      chunks.push(...(await splitPdf(slice)));
+    } else {
+      chunks.push(slice);
     }
   }
-  const src = await PDFDocument.load(buffer, { ignoreEncryption: true });
-  return splitByPages(src);
+  return chunks;
 }
 
-async function splitByPages(src: PDFDocument): Promise<Buffer[]> {
-  const totalPages = src.getPageCount();
-  const chunks: Buffer[] = [];
-  for (let start = 0; start < totalPages; start += MAX_CHUNK_PAGES) {
-    const end = Math.min(start + MAX_CHUNK_PAGES, totalPages);
-    const dest = await PDFDocument.create();
-    const pageIndices = Array.from({ length: end - start }, (_, k) => start + k);
-    const copied = await dest.copyPages(src, pageIndices);
-    copied.forEach((p) => dest.addPage(p));
-    const bytes = await dest.save();
-    chunks.push(Buffer.from(bytes));
-  }
-  return chunks;
+async function extractPages(src: PDFDocument, start: number, end: number): Promise<Buffer> {
+  const dest = await PDFDocument.create();
+  const pageIndices = Array.from({ length: end - start }, (_, k) => start + k);
+  const copied = await dest.copyPages(src, pageIndices);
+  copied.forEach((p) => dest.addPage(p));
+  const bytes = await dest.save();
+  return Buffer.from(bytes);
 }
 
 async function parsePdfSingle(buffer: Buffer, chunkLabel?: string): Promise<ParsedDocument> {
