@@ -74,21 +74,29 @@ export const getProject = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+const VALID_STAGES = ['new', 'plans_reviewed', 'quote_built'] as const;
+
 export const createProject = asyncHandler(async (req: Request, res: Response) => {
-  const { name, project_address, gc_name, bid_date, project_type, notes } = req.body;
+  const { name, project_address, gc_name, bid_date, project_type, notes, stage } = req.body;
   if (!name) throw new AppError('Project name is required', 400);
 
+  const safeStage = VALID_STAGES.includes(stage) ? stage : 'new';
+
   const result = await query(
-    `INSERT INTO estimate_projects (name, project_address, gc_name, bid_date, project_type, notes)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [name, project_address, gc_name, bid_date || null, project_type || 'roofing', notes]
+    `INSERT INTO estimate_projects (name, project_address, gc_name, bid_date, project_type, notes, stage)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [name, project_address, gc_name, bid_date || null, project_type || 'roofing', notes, safeStage]
   );
   res.status(201).json({ success: true, data: result.rows[0] });
 });
 
 export const updateProject = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { name, project_address, gc_name, bid_date, project_type, status, notes } = req.body;
+  const { name, project_address, gc_name, bid_date, project_type, status, notes, stage } = req.body;
+
+  if (stage !== undefined && !VALID_STAGES.includes(stage)) {
+    throw new AppError(`Invalid stage. Must be one of: ${VALID_STAGES.join(', ')}`, 400);
+  }
 
   const result = await query(
     `UPDATE estimate_projects SET
@@ -99,9 +107,10 @@ export const updateProject = asyncHandler(async (req: Request, res: Response) =>
       project_type = COALESCE($5, project_type),
       status = COALESCE($6, status),
       notes = COALESCE($7, notes),
+      stage = COALESCE($8, stage),
       updated_at = NOW()
-    WHERE id = $8 RETURNING *`,
-    [name, project_address, gc_name, bid_date || null, project_type, status, notes, id]
+    WHERE id = $9 RETURNING *`,
+    [name, project_address, gc_name, bid_date || null, project_type, status, notes, stage, id]
   );
   if (!result.rows[0]) throw new AppError('Project not found', 404);
   res.json({ success: true, data: result.rows[0] });
@@ -248,6 +257,32 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
     await query('DELETE FROM estimate_documents WHERE id = $1', [docId]);
   }
   res.json({ success: true });
+});
+
+export const bulkDeleteDocuments = asyncHandler(async (req: Request, res: Response) => {
+  const { id: projectId } = req.params;
+  const { docIds } = req.body as { docIds?: string[] };
+
+  if (!Array.isArray(docIds) || docIds.length === 0) {
+    throw new AppError('docIds must be a non-empty array', 400);
+  }
+
+  // Pull file paths first so we can unlink before deleting
+  const docs = await query(
+    'SELECT id, file_path FROM estimate_documents WHERE project_id = $1 AND id = ANY($2::uuid[])',
+    [projectId, docIds]
+  );
+
+  for (const d of docs.rows) {
+    try { fs.unlinkSync(d.file_path); } catch {}
+  }
+
+  const result = await query(
+    'DELETE FROM estimate_documents WHERE project_id = $1 AND id = ANY($2::uuid[])',
+    [projectId, docIds]
+  );
+
+  res.json({ success: true, deleted: result.rowCount });
 });
 
 // ── LINE ITEMS ────────────────────────────────────────────────────────────────

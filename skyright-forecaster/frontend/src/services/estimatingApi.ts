@@ -10,6 +10,8 @@ function authHeaders() {
 
 // ── Projects ─────────────────────────────────────────────────────────────────
 
+export type EstimateStage = 'new' | 'plans_reviewed' | 'quote_built';
+
 export interface EstimateProject {
   id: string;
   name: string;
@@ -18,6 +20,7 @@ export interface EstimateProject {
   bid_date: string;
   project_type: string;
   status: string;
+  stage: EstimateStage;
   notes: string;
   created_at: string;
   updated_at: string;
@@ -125,6 +128,11 @@ export const parseDocument = async (projectId: string, docId: string): Promise<a
 
 export const deleteDocument = async (projectId: string, docId: string): Promise<void> => {
   await axios.delete(`${base}/${projectId}/documents/${docId}`, { headers: authHeaders() });
+};
+
+export const bulkDeleteDocuments = async (projectId: string, docIds: string[]): Promise<{ deleted: number }> => {
+  const res = await axios.post(`${base}/${projectId}/documents/bulk-delete`, { docIds }, { headers: authHeaders() });
+  return res.data;
 };
 
 // ── Line Items ────────────────────────────────────────────────────────────────

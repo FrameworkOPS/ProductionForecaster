@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   getProject, updateProject, exportBidPdf,
-  uploadDocument, parseDocument, deleteDocument,
+  uploadDocument, parseDocument, deleteDocument, bulkDeleteDocuments,
   createLineItem, updateLineItem, deleteLineItem,
   createSpec, deleteSpec,
   createConcern, deleteConcern,
@@ -49,12 +49,21 @@ export default function EstimateDetail() {
       setEditForm({
         name: data.name, project_address: data.project_address,
         gc_name: data.gc_name, bid_date: data.bid_date?.split('T')[0] || '',
-        project_type: data.project_type, status: data.status, notes: data.notes,
+        project_type: data.project_type, status: data.status, stage: data.stage || 'new', notes: data.notes,
       })
     } catch (e: any) {
       setError(e.response?.data?.message || e.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function quickSetStage(stage: 'new' | 'plans_reviewed' | 'quote_built') {
+    try {
+      await updateProject(id!, { stage } as any)
+      load()
+    } catch (e: any) {
+      setError(e.response?.data?.message || e.message)
     }
   }
 
@@ -117,6 +126,32 @@ export default function EstimateDetail() {
                 {project.bid_date && (
                   <span>📅 Bid: {new Date(project.bid_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 )}
+              </div>
+
+              {/* Stage pills — click to advance */}
+              <div className="flex gap-1 mt-3">
+                {([
+                  { key: 'new', label: 'New', accent: 'bg-blue-500' },
+                  { key: 'plans_reviewed', label: 'Plans Reviewed', accent: 'bg-amber-500' },
+                  { key: 'quote_built', label: 'Quote Built', accent: 'bg-emerald-500' },
+                ] as const).map(s => {
+                  const active = (project.stage || 'new') === s.key
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => quickSetStage(s.key)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition flex items-center gap-1.5 ${
+                        active
+                          ? 'bg-gray-900 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      title={active ? `Currently in ${s.label}` : `Move to ${s.label}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${active ? s.accent : 'bg-gray-400'}`} />
+                      {s.label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
@@ -221,17 +256,15 @@ export default function EstimateDetail() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Stage</label>
                   <select
-                    value={editForm.status || 'draft'}
-                    onChange={e => setEditForm((p: any) => ({ ...p, status: e.target.value }))}
+                    value={editForm.stage || 'new'}
+                    onChange={e => setEditForm((p: any) => ({ ...p, stage: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   >
-                    <option value="draft">Draft</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="submitted">Submitted</option>
-                    <option value="won">Won</option>
-                    <option value="lost">Lost</option>
+                    <option value="new">New</option>
+                    <option value="plans_reviewed">Plans Reviewed</option>
+                    <option value="quote_built">Quote Built</option>
                   </select>
                 </div>
               </div>
@@ -272,14 +305,28 @@ function DocumentsTab({ projectId, docs, onRefresh }: { projectId: string; docs:
   const [docType, setDocType] = useState('roofscope')
   const [error, setError] = useState('')
   const [parseResult, setParseResult] = useState<{ docId: string; summary: string } | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
+  // Drop selections that point at docs no longer in the list (e.g. after refresh)
+  useEffect(() => {
+    const validIds = new Set(docs.map(d => d.id))
+    setSelected(prev => {
+      const next = new Set<string>()
+      for (const id of prev) if (validIds.has(id)) next.add(id)
+      return next
+    })
+  }, [docs])
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
     setUploading(true)
     setError('')
     try {
-      await uploadDocument(projectId, file, docType)
+      for (const file of files) {
+        await uploadDocument(projectId, file, docType)
+      }
       onRefresh()
     } catch (err: any) {
       setError(err.response?.data?.message || err.message)
@@ -310,6 +357,35 @@ function DocumentsTab({ projectId, docs, onRefresh }: { projectId: string; docs:
     onRefresh()
   }
 
+  function toggleSelected(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === docs.length) setSelected(new Set())
+    else setSelected(new Set(docs.map(d => d.id)))
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected)
+    if (!ids.length) return
+    if (!confirm(`Delete ${ids.length} selected document${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    try {
+      await bulkDeleteDocuments(projectId, ids)
+      setSelected(new Set())
+      onRefresh()
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   const DOC_TYPES = [
     { value: 'roofscope', label: 'RoofScope Report' },
     { value: 'sidingscope', label: 'SidingScope Report' },
@@ -318,11 +394,13 @@ function DocumentsTab({ projectId, docs, onRefresh }: { projectId: string; docs:
     { value: 'unknown', label: 'Other' },
   ]
 
+  const allSelected = docs.length > 0 && selected.size === docs.length
+
   return (
     <div className="space-y-5">
       {/* Upload card */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">Upload Document</h3>
+        <h3 className="font-semibold text-gray-900 mb-4">Upload Documents</h3>
         <div className="flex gap-3 items-end flex-wrap">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Document Type</label>
@@ -335,11 +413,12 @@ function DocumentsTab({ projectId, docs, onRefresh }: { projectId: string; docs:
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">PDF File</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">PDF File(s) — up to 250 MB each</label>
             <input
               ref={fileRef}
               type="file"
               accept=".pdf"
+              multiple
               onChange={handleUpload}
               disabled={uploading}
               className="text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-teal-700 file:text-white file:font-medium hover:file:bg-teal-800 file:cursor-pointer"
@@ -357,47 +436,87 @@ function DocumentsTab({ projectId, docs, onRefresh }: { projectId: string; docs:
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {docs.length > 0 && (
+        <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-2.5">
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+            />
+            {selected.size === 0
+              ? `Select documents (${docs.length})`
+              : `${selected.size} of ${docs.length} selected`}
+          </label>
+          {selected.size > 0 && (
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-red-700 disabled:opacity-50 transition"
+            >
+              {bulkDeleting ? 'Deleting…' : `Delete ${selected.size}`}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Doc list */}
       {docs.length === 0 ? (
         <div className="text-center py-12 text-gray-400">No documents yet. Upload a RoofScope, SidingScope, or spec sheet above.</div>
       ) : (
         <div className="space-y-3">
-          {docs.map(doc => (
-            <div key={doc.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="text-2xl">📄</div>
-                <div className="min-w-0">
-                  <p className="font-medium text-gray-900 truncate">{doc.file_name}</p>
-                  <div className="flex gap-2 mt-1">
-                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{doc.doc_type}</span>
-                    {doc.parsed ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Parsed {doc.parsed_at ? new Date(doc.parsed_at).toLocaleDateString() : ''}</span>
-                    ) : (
-                      <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Not parsed</span>
-                    )}
+          {docs.map(doc => {
+            const isSelected = selected.has(doc.id)
+            return (
+              <div
+                key={doc.id}
+                className={`rounded-xl border p-4 flex items-center justify-between gap-3 transition ${
+                  isSelected ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-200'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelected(doc.id)}
+                    className="w-4 h-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 flex-shrink-0"
+                  />
+                  <div className="text-2xl">📄</div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{doc.file_name}</p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{doc.doc_type}</span>
+                      {doc.parsed ? (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Parsed {doc.parsed_at ? new Date(doc.parsed_at).toLocaleDateString() : ''}</span>
+                      ) : (
+                        <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">Not parsed</span>
+                      )}
+                    </div>
                   </div>
                 </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handleParse(doc.id)}
+                    disabled={parsing === doc.id}
+                    className="bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-teal-800 disabled:opacity-50 transition whitespace-nowrap"
+                  >
+                    {parsing === doc.id ? (
+                      <span className="flex items-center gap-1.5">
+                        <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                          <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+                        </svg>
+                        Parsing…
+                      </span>
+                    ) : '🤖 Parse with AI'}
+                  </button>
+                  <button onClick={() => handleDelete(doc.id)} className="text-red-400 hover:text-red-600 text-xs px-2 transition">Delete</button>
+                </div>
               </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <button
-                  onClick={() => handleParse(doc.id)}
-                  disabled={parsing === doc.id}
-                  className="bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-teal-800 disabled:opacity-50 transition whitespace-nowrap"
-                >
-                  {parsing === doc.id ? (
-                    <span className="flex items-center gap-1.5">
-                      <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
-                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
-                      </svg>
-                      Parsing…
-                    </span>
-                  ) : '🤖 Parse with AI'}
-                </button>
-                <button onClick={() => handleDelete(doc.id)} className="text-red-400 hover:text-red-600 text-xs px-2 transition">Delete</button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -656,6 +775,8 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
   const [editVals, setEditVals] = useState<any>({})
   const [repricing, setRepricing] = useState(false)
   const [repriceMsg, setRepriceMsg] = useState('')
+  // Inline edits: track which cell is being edited and its draft value
+  const [inlineEdit, setInlineEdit] = useState<{ id: string; field: 'quantity' | 'unit_price'; value: string } | null>(null)
   const flaggedCount = items.filter(li => li.price_flagged).length
 
   async function handleReprice() {
@@ -691,6 +812,17 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
     onRefresh()
   }
 
+  async function commitInlineEdit() {
+    if (!inlineEdit) return
+    const num = parseFloat(inlineEdit.value)
+    const current = items.find(i => i.id === inlineEdit.id)
+    const existing = current ? parseFloat(String((current as any)[inlineEdit.field] ?? 0)) : 0
+    setInlineEdit(null)
+    if (isNaN(num) || num === existing) return
+    await updateLineItem(projectId, inlineEdit.id, { [inlineEdit.field]: num })
+    onRefresh()
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Delete this line item?')) return
     await deleteLineItem(projectId, id)
@@ -711,7 +843,7 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
         <div>
           <h3 className="font-semibold text-gray-900">Bid Line Items</h3>
           <p className="text-sm text-gray-400 mt-0.5">
-            {items.length} items
+            {items.length} items · <span className="text-teal-600">Click any qty or price to edit</span>
             {flaggedCount > 0 && (
               <span className="ml-2 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium">
                 ⚠ {flaggedCount} need price review
@@ -796,10 +928,56 @@ function LineItemsTab({ projectId, items, onRefresh }: { projectId: string; item
                           {li.notes && <p className="text-xs text-gray-400 mt-0.5">{li.notes}</p>}
                         </div>
                         <div className="col-span-2 text-right font-mono text-gray-700">
-                          {parseFloat(String(li.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                          {inlineEdit?.id === li.id && inlineEdit.field === 'quantity' ? (
+                            <input
+                              type="number"
+                              step="any"
+                              autoFocus
+                              value={inlineEdit.value}
+                              onChange={e => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                else if (e.key === 'Escape') setInlineEdit(null)
+                              }}
+                              className="border border-teal-400 rounded px-2 py-0.5 text-sm w-full text-right bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setInlineEdit({ id: li.id, field: 'quantity', value: String(li.quantity || '') })}
+                              className="w-full text-right hover:bg-teal-50 hover:ring-1 hover:ring-teal-300 rounded px-2 py-0.5 transition cursor-pointer"
+                              title="Click to edit quantity"
+                            >
+                              {parseFloat(String(li.quantity || 0)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                            </button>
+                          )}
                         </div>
                         <div className="col-span-1 text-gray-500">{li.unit}</div>
-                        <div className="col-span-2 text-right font-mono text-gray-700">{fmtCurrency(li.unit_price)}</div>
+                        <div className="col-span-2 text-right font-mono text-gray-700">
+                          {inlineEdit?.id === li.id && inlineEdit.field === 'unit_price' ? (
+                            <input
+                              type="number"
+                              step="any"
+                              autoFocus
+                              value={inlineEdit.value}
+                              onChange={e => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                              onBlur={commitInlineEdit}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                                else if (e.key === 'Escape') setInlineEdit(null)
+                              }}
+                              className="border border-teal-400 rounded px-2 py-0.5 text-sm w-full text-right bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setInlineEdit({ id: li.id, field: 'unit_price', value: String(li.unit_price || '') })}
+                              className="w-full text-right hover:bg-teal-50 hover:ring-1 hover:ring-teal-300 rounded px-2 py-0.5 transition cursor-pointer"
+                              title="Click to edit unit price"
+                            >
+                              {fmtCurrency(li.unit_price)}
+                            </button>
+                          )}
+                        </div>
                         <div className="col-span-2 text-right font-mono font-medium text-gray-900">{fmtCurrency(lineTotal)}</div>
                         <div className="col-span-1 flex gap-2 justify-end">
                           <button onClick={() => { setEditing(li.id); setEditVals({ description: li.description, quantity: li.quantity, unit: li.unit, unit_price: li.unit_price, category: li.category }) }} className="text-teal-600 hover:text-teal-800 text-xs">Edit</button>

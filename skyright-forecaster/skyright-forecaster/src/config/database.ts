@@ -428,6 +428,15 @@ export async function initializeDatabase(): Promise<void> {
       ON CONFLICT (material_key) DO NOTHING;
     `);
 
+    // Estimating: add stage column (workflow: new → plans_reviewed → quote_built)
+    await query(`
+      ALTER TABLE estimate_projects ADD COLUMN IF NOT EXISTS stage VARCHAR(50) DEFAULT 'new'
+    `);
+    // Backfill any nulls so the UI grouping always has a stage
+    await query(`
+      UPDATE estimate_projects SET stage = 'new' WHERE stage IS NULL
+    `);
+
     // Seed default production parameters if none exist
     await query(`
       INSERT INTO production_parameters
@@ -436,10 +445,55 @@ export async function initializeDatabase(): Promise<void> {
       WHERE NOT EXISTS (SELECT 1 FROM production_parameters)
     `);
 
+    // Seed default user accounts (idempotent — only inserts if email doesn't exist)
+    await seedDefaultUsers();
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Error initializing database', error);
     throw error;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Default user seeding — idempotent, runs on every startup
+// ────────────────────────────────────────────────────────────────────────────
+const DEFAULT_USERS: Array<{
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}> = [
+  {
+    email: 'office@skyright.com',
+    password: 'Password',
+    firstName: 'Quincy',
+    lastName: 'Greene',
+    role: 'admin',
+  },
+];
+
+async function seedDefaultUsers(): Promise<void> {
+  // Lazy import so this file doesn't pull bcrypt eagerly when the module loads
+  const { hashPassword } = await import('../utils/auth');
+  const { randomUUID } = await import('crypto');
+
+  for (const user of DEFAULT_USERS) {
+    try {
+      const existing = await query('SELECT id FROM users WHERE email = $1', [user.email]);
+      if (existing.rows.length > 0) continue;
+
+      const hash = await hashPassword(user.password);
+      await query(
+        `INSERT INTO users (id, email, password_hash, first_name, last_name, role)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [randomUUID(), user.email, hash, user.firstName, user.lastName, user.role]
+      );
+      console.log(`Seeded default user: ${user.email}`);
+    } catch (err) {
+      console.warn(`Could not seed user ${user.email}:`, (err as Error).message);
+    }
   }
 }
 
