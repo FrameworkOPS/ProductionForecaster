@@ -19,6 +19,7 @@ import crewStaffRoutes from './routes/crewStaffRoutes';
 import productionActualsRoutes from './routes/productionActualsRoutes';
 import metricsRoutes from './routes/metricsRoutes';
 import estimatingRoutes from './routes/estimatingRoutes';
+import pricesRoutes from './routes/pricesRoutes';
 
 dotenv.config();
 
@@ -69,6 +70,7 @@ app.use('/api/metrics', metricsRoutes);
 app.use('/api/hubspot', hubspotRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/estimating', estimatingRoutes);
+app.use('/api/prices', pricesRoutes);
 
 // Serve React frontend static files
 const frontendDist = path.join(__dirname, '../../frontend/dist');

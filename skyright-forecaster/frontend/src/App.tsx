@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Estimating from './pages/Estimating'
 import EstimateDetail from './pages/EstimateDetail'
+import Prices from './pages/Prices'
 
 // Production Forecaster - Roofing Business Management
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/estimating" element={<Estimating />} />
         <Route path="/estimating/:id" element={<EstimateDetail />} />
+        <Route path="/prices" element={<Prices />} />
         <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </Router>
