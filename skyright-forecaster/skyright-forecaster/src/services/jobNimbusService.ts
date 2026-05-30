@@ -9,13 +9,33 @@ import { getUUID } from '../utils/uuid';
  * Bearer token. We read Jobs and map them into the local `jobs` table and the
  * weighted sales pipeline, mirroring the shape the frontend already consumes.
  *
- * Configuration (environment variables):
- *   JOBNIMBUS_API_KEY        — required, the API key from JobNimbus settings
- *   JOBNIMBUS_API_BASE       — optional, defaults to https://app.jobnimbus.com/api1
- *   JOBNIMBUS_PIPELINE_STATUSES — optional CSV of status names that count as the
- *                                 active sales pipeline (e.g. "Contract Signed,Estimating").
- *                                 When unset, all open jobs are included.
+ * Configuration (environment variables). Field/status names vary per JobNimbus
+ * account, so the mapping is driven entirely by config — no code change needed
+ * once the account's field names are known:
+ *
+ *   JOBNIMBUS_API_KEY            — required, the API key from JobNimbus settings
+ *   JOBNIMBUS_API_BASE           — optional, defaults to https://app.jobnimbus.com/api1
+ *   JOBNIMBUS_PIPELINE_STATUSES  — optional CSV of status names that count as the
+ *                                  active sales pipeline (e.g. "Contract Signed,Estimating").
+ *                                  When unset, all jobs are included.
+ *   JOBNIMBUS_ROOF_SQUARES_FIELDS — optional CSV of field names to read roof squares
+ *                                  from, tried in order. Defaults to a set of common
+ *                                  names (roof_squares, Roof Squares, squares, sqs).
+ *   JOBNIMBUS_TYPE_FIELDS        — optional CSV of field names to inspect when
+ *                                  classifying metal vs. shingle. Defaults to
+ *                                  record_type_name, status_name, name, display_name.
+ *   JOBNIMBUS_METAL_KEYWORDS     — optional CSV of substrings that mark a metal job
+ *                                  (default "metal").
+ *   JOBNIMBUS_SHINGLE_KEYWORDS   — optional CSV of substrings that mark a shingle job
+ *                                  (default "shingle").
  */
+
+function csvEnv(name: string, fallback: string[]): string[] {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : fallback;
+}
 
 export interface JobNimbusJob {
   jnid: string;
@@ -51,6 +71,10 @@ interface JobMapping {
 export class JobNimbusService {
   private apiClient: AxiosInstance;
   private readonly pipelineStatuses: string[];
+  private readonly roofSquaresFields: string[];
+  private readonly typeFields: string[];
+  private readonly metalKeywords: string[];
+  private readonly shingleKeywords: string[];
 
   constructor(apiKey: string) {
     const baseURL = process.env.JOBNIMBUS_API_BASE || 'https://app.jobnimbus.com/api1';
@@ -62,10 +86,25 @@ export class JobNimbusService {
       },
     });
 
-    this.pipelineStatuses = (process.env.JOBNIMBUS_PIPELINE_STATUSES || '')
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
+    this.pipelineStatuses = csvEnv('JOBNIMBUS_PIPELINE_STATUSES', []).map((s) => s.toLowerCase());
+    this.roofSquaresFields = csvEnv('JOBNIMBUS_ROOF_SQUARES_FIELDS', [
+      'roof_squares',
+      'Roof Squares',
+      'squares',
+      'Squares',
+      'sqs',
+      'SQs',
+    ]);
+    this.typeFields = csvEnv('JOBNIMBUS_TYPE_FIELDS', [
+      'record_type_name',
+      'status_name',
+      'name',
+      'display_name',
+    ]);
+    this.metalKeywords = csvEnv('JOBNIMBUS_METAL_KEYWORDS', ['metal']).map((s) => s.toLowerCase());
+    this.shingleKeywords = csvEnv('JOBNIMBUS_SHINGLE_KEYWORDS', ['shingle']).map((s) =>
+      s.toLowerCase()
+    );
   }
 
   /**
@@ -106,34 +145,29 @@ export class JobNimbusService {
   }
 
   /**
-   * Classify a job as 'metal' or 'shingle' from its record type / status text.
-   * Returns null when neither roofing type can be inferred.
+   * Classify a job as 'metal' or 'shingle' by scanning the configured type
+   * fields for the configured keywords. Returns null when neither matches.
+   * If both match, metal wins (a metal+shingle job is treated as metal).
    */
   classifyJobType(job: JobNimbusJob): 'metal' | 'shingle' | null {
-    const haystack = [
-      job.record_type_name,
-      job.status_name,
-      job.name,
-      job.display_name,
-    ]
-      .filter(Boolean)
+    const haystack = this.typeFields
+      .map((f) => job[f])
+      .filter((v) => v != null && v !== '')
       .join(' ')
       .toLowerCase();
 
-    if (haystack.includes('metal')) return 'metal';
-    if (haystack.includes('shingle')) return 'shingle';
+    if (this.metalKeywords.some((k) => haystack.includes(k))) return 'metal';
+    if (this.shingleKeywords.some((k) => haystack.includes(k))) return 'shingle';
     return null;
   }
 
   /**
-   * Pull a numeric "roof squares" value from common JobNimbus custom field
-   * names. Falls back to 0 when none are present.
+   * Pull a numeric "roof squares" value from the configured field names, tried
+   * in order. Falls back to 0 when none are present or parseable.
    */
   extractRoofSquares(job: JobNimbusJob): number {
-    const candidates = ['roof_squares', 'Roof Squares', 'squares', 'Squares', 'sqs', 'SQs'];
-    for (const key of candidates) {
-      const raw = job[key];
-      const val = parseFloat(raw);
+    for (const key of this.roofSquaresFields) {
+      const val = parseFloat(job[key]);
       if (!Number.isNaN(val) && val > 0) return val;
     }
     return 0;
@@ -151,7 +185,7 @@ export class JobNimbusService {
     return { metal, shingles };
   }
 
-  private mapJobData(job: JobNimbusJob): JobMapping {
+  mapJobData(job: JobNimbusJob): JobMapping {
     const type = this.classifyJobType(job);
     const sqs = this.extractRoofSquares(job);
     return {

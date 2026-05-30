@@ -18,6 +18,12 @@ Set these environment variables on the backend (Railway, `.env`, etc.):
 | `JOBNIMBUS_API_KEY` | Yes | API key from JobNimbus settings. |
 | `JOBNIMBUS_API_BASE` | No | API base URL. Defaults to `https://app.jobnimbus.com/api1`. |
 | `JOBNIMBUS_PIPELINE_STATUSES` | No | Comma-separated list of JobNimbus status names that count as the active sales pipeline (e.g. `Contract Signed,Estimating`). When unset, all jobs are included. |
+| `JOBNIMBUS_ROOF_SQUARES_FIELDS` | No | Comma-separated field names to read roof squares from, tried in order. Defaults to `roof_squares,Roof Squares,squares,Squares,sqs,SQs`. Set this to your account's exact custom-field name. |
+| `JOBNIMBUS_TYPE_FIELDS` | No | Comma-separated job fields inspected when classifying metal vs. shingle. Defaults to `record_type_name,status_name,name,display_name`. |
+| `JOBNIMBUS_METAL_KEYWORDS` | No | Comma-separated substrings that mark a metal job. Defaults to `metal`. |
+| `JOBNIMBUS_SHINGLE_KEYWORDS` | No | Comma-separated substrings that mark a shingle job. Defaults to `shingle`. |
+
+> **Tuning to your account:** field and status names differ per JobNimbus account. Once you know your exact roof-squares custom-field name, job-type field, and pipeline status names, set the variables above — **no code change is needed**. The mapping logic is covered by unit tests (`src/__tests__/jobNimbus.test.ts`).
 
 ## 3. Use it
 
