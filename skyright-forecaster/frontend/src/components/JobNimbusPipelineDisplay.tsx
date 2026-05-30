@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../utils/apiConfig';
 import { useAuthStore } from '../store/authStore';
-import { CLOSING_RATE, CREW_TYPE_RATIOS, REVENUE_PER_SQ } from '../constants/businessConstants';
+import { CLOSING_RATE, REVENUE_PER_SQ } from '../constants/businessConstants';
 
-interface HubSpotDeal {
-  hubspot_id: string;
+interface JobNimbusDeal {
+  jobnimbus_id: string;
   dealname: string;
   job_type: 'shingle' | 'metal';
   roof_sqs: number;
@@ -49,33 +49,32 @@ const getForecastWeeks = (): string[] => {
 
 // ──────────────────────────────────────────────────────────────────────────
 
-export default function HubSpotPipelineDisplay() {
+export default function JobNimbusPipelineDisplay() {
   const { token } = useAuthStore();
-  const [deals, setDeals] = useState<HubSpotDeal[]>([]);
+  const [deals, setDeals] = useState<JobNimbusDeal[]>([]);
   const [roofingSquares, setRoofingSquares] = useState<RoofingSquares | null>(null);
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const [pushingTickets, setPushingTickets] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'all' | 'shingle' | 'metal'>('all');
 
   useEffect(() => {
-    loadHubSpotPipeline();
+    loadPipeline();
   }, []);
 
-  const loadHubSpotPipeline = async () => {
+  const loadPipeline = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/hubspot/pipeline-summary`, {
+      const res = await fetch(`${API_BASE_URL}/api/jobnimbus/pipeline-summary`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
         setError(
           res.status === 401
-            ? 'HubSpot not connected. Please authorize first.'
-            : 'Failed to load HubSpot pipeline'
+            ? 'JobNimbus not connected. Set JOBNIMBUS_API_KEY on the backend.'
+            : 'Failed to load JobNimbus pipeline'
         );
         return;
       }
@@ -84,22 +83,20 @@ export default function HubSpotPipelineDisplay() {
       setDeals(data.data?.deals || []);
       setRoofingSquares(data.data?.roofingSquares ?? null);
     } catch (err) {
-      setError('Error loading HubSpot pipeline');
+      setError('Error loading JobNimbus pipeline');
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Shared push helper ────────────────────────────────────────────────────
+  // ─── Push helper ───────────────────────────────────────────────────────────
 
   const PUSH_WEEKS = 8; // only push into the nearest 8 weeks
 
-  /**
-   * Fetch existing forecast values for a set of weeks so we can ADD to them
-   * instead of overwriting them.
-   */
-  const fetchExistingForecasts = async (weeks: string[]): Promise<Map<string, { shingle: number; metal: number }>> => {
+  const fetchExistingForecasts = async (
+    weeks: string[]
+  ): Promise<Map<string, { shingle: number; metal: number }>> => {
     const map = new Map<string, { shingle: number; metal: number }>();
     weeks.forEach((w) => map.set(w, { shingle: 0, metal: 0 }));
     try {
@@ -118,7 +115,7 @@ export default function HubSpotPipelineDisplay() {
           const entry = map.get(w);
           if (entry) {
             if (row.job_type === 'shingle') entry.shingle = row.projected_square_footage || 0;
-            if (row.job_type === 'metal')   entry.metal   = row.projected_square_footage || 0;
+            if (row.job_type === 'metal') entry.metal = row.projected_square_footage || 0;
           }
         });
       }
@@ -141,10 +138,6 @@ export default function HubSpotPipelineDisplay() {
       }),
     });
 
-  /**
-   * Distribute total weighted deal SQs (by type) evenly across the first
-   * 8 weeks and ADD to whatever is already in those weeks.
-   */
   const handlePushToSalesForecast = async () => {
     const shingleTotal = deals
       .filter((d) => d.job_type === 'shingle')
@@ -154,16 +147,16 @@ export default function HubSpotPipelineDisplay() {
       .reduce((s, d) => s + d.estimated_sqs, 0);
 
     if (shingleTotal === 0 && metalTotal === 0) {
-      alert('No weighted SQs to push — no deals in pipeline.');
+      alert('No weighted SQs to push — no jobs in pipeline.');
       return;
     }
 
     const weeks = getForecastWeeks().slice(0, PUSH_WEEKS);
     const weeklyShingle = shingleTotal / weeks.length;
-    const weeklyMetal   = metalTotal   / weeks.length;
+    const weeklyMetal = metalTotal / weeks.length;
 
     const confirmed = window.confirm(
-      `Push weighted deal pipeline to Sales Forecast?\n\n` +
+      `Push weighted JobNimbus pipeline to Sales Forecast?\n\n` +
         `Shingle: ${shingleTotal.toFixed(0)} total SQs → +${Math.round(weeklyShingle)} SQs/week\n` +
         `Metal:   ${metalTotal.toFixed(0)} total SQs → +${Math.round(weeklyMetal)} SQs/week\n\n` +
         `Added on top of existing values across the next ${weeks.length} weeks.`
@@ -178,15 +171,15 @@ export default function HubSpotPipelineDisplay() {
       weeks.forEach((w) => {
         const cur = existing.get(w) || { shingle: 0, metal: 0 };
         if (weeklyShingle > 0) {
-          posts.push(postForecastValue(w, 'shingle', cur.shingle + weeklyShingle, 'HubSpot weighted pipeline'));
+          posts.push(postForecastValue(w, 'shingle', cur.shingle + weeklyShingle, 'JobNimbus weighted pipeline'));
         }
         if (weeklyMetal > 0) {
-          posts.push(postForecastValue(w, 'metal', cur.metal + weeklyMetal, 'HubSpot weighted pipeline'));
+          posts.push(postForecastValue(w, 'metal', cur.metal + weeklyMetal, 'JobNimbus weighted pipeline'));
         }
       });
 
       await Promise.all(posts);
-      alert(`Done! Added deal pipeline SQs to the next ${weeks.length} weeks. Refresh the Sales Forecast table to see the changes.`);
+      alert(`Done! Added pipeline SQs to the next ${weeks.length} weeks. Refresh the Sales Forecast table to see the changes.`);
     } catch (err) {
       console.error('Error pushing to sales forecast:', err);
       alert('Failed to push to sales forecast. Check console for details.');
@@ -195,65 +188,16 @@ export default function HubSpotPipelineDisplay() {
     }
   };
 
-  /**
-   * Distribute ticket pipeline SQs evenly across the first 8 weeks and
-   * ADD to whatever is already in those weeks.
-   */
-  const handlePushTicketsToForecast = async () => {
-    if (!roofingSquares) return;
-    const { shingles, metal } = roofingSquares;
-
-    if (shingles === 0 && metal === 0) {
-      alert('No ticket SQs to push — no production tickets found.');
-      return;
-    }
-
-    const weeks = getForecastWeeks().slice(0, PUSH_WEEKS);
-    const weeklyShingle = shingles / weeks.length;
-    const weeklyMetal   = metal   / weeks.length;
-
-    const confirmed = window.confirm(
-      `Push ticket pipeline SQs to Sales Forecast?\n\n` +
-        `Shingle: ${shingles.toFixed(0)} total SQs → +${Math.round(weeklyShingle)} SQs/week\n` +
-        `Metal:   ${metal.toFixed(0)} total SQs → +${Math.round(weeklyMetal)} SQs/week\n\n` +
-        `Added on top of existing values across the next ${weeks.length} weeks.`
-    );
-    if (!confirmed) return;
-
-    setPushingTickets(true);
-    try {
-      const existing = await fetchExistingForecasts(weeks);
-      const posts: Promise<Response>[] = [];
-
-      weeks.forEach((w) => {
-        const cur = existing.get(w) || { shingle: 0, metal: 0 };
-        if (weeklyShingle > 0) {
-          posts.push(postForecastValue(w, 'shingle', cur.shingle + weeklyShingle, 'HubSpot ticket pipeline'));
-        }
-        if (weeklyMetal > 0) {
-          posts.push(postForecastValue(w, 'metal', cur.metal + weeklyMetal, 'HubSpot ticket pipeline'));
-        }
-      });
-
-      await Promise.all(posts);
-      alert(`Done! Added ticket pipeline SQs to the next ${weeks.length} weeks. Refresh the Sales Forecast table to see the changes.`);
-    } catch (err) {
-      console.error('Error pushing ticket SQs to sales forecast:', err);
-      alert('Failed to push ticket SQs. Check console for details.');
-    } finally {
-      setPushingTickets(false);
-    }
-  };
-
-  const handleAssignType = (hubspotId: string, newType: 'shingle' | 'metal') => {
+  const handleAssignType = (jobnimbusId: string, newType: 'shingle' | 'metal') => {
     setDeals(
       deals.map((d) =>
-        d.hubspot_id === hubspotId
+        d.jobnimbus_id === jobnimbusId
           ? {
               ...d,
               job_type: newType,
               gross_value: d.roof_sqs * (newType === 'metal' ? REVENUE_PER_SQ.metal : REVENUE_PER_SQ.shingles),
-              weighted_value: d.roof_sqs * (newType === 'metal' ? REVENUE_PER_SQ.metal : REVENUE_PER_SQ.shingles) * CLOSING_RATE,
+              weighted_value:
+                d.roof_sqs * (newType === 'metal' ? REVENUE_PER_SQ.metal : REVENUE_PER_SQ.shingles) * CLOSING_RATE,
               estimated_sqs: d.roof_sqs * CLOSING_RATE,
             }
           : d
@@ -266,7 +210,7 @@ export default function HubSpotPipelineDisplay() {
       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
         <p className="text-yellow-800">{error}</p>
         <button
-          onClick={loadHubSpotPipeline}
+          onClick={loadPipeline}
           className="mt-2 px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-sm"
         >
           Retry
@@ -285,7 +229,7 @@ export default function HubSpotPipelineDisplay() {
     <div className="bg-white rounded-lg shadow p-6 mb-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xl font-bold text-gray-900">HubSpot Pipeline — Contract Sent</h3>
+        <h3 className="text-xl font-bold text-gray-900">JobNimbus Pipeline</h3>
         <div className="flex gap-2">
           <button
             onClick={handlePushToSalesForecast}
@@ -295,7 +239,7 @@ export default function HubSpotPipelineDisplay() {
             {pushing ? 'Pushing…' : '↓ Push to Sales Forecast'}
           </button>
           <button
-            onClick={loadHubSpotPipeline}
+            onClick={loadPipeline}
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
           >
@@ -307,7 +251,7 @@ export default function HubSpotPipelineDisplay() {
       {/* Deal summary cards */}
       <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="bg-blue-50 p-4 rounded border border-blue-200">
-          <p className="text-sm text-blue-600 font-medium">Deals</p>
+          <p className="text-sm text-blue-600 font-medium">Jobs</p>
           <p className="text-2xl font-bold text-blue-900">{filteredDeals.length}</p>
         </div>
         <div className="bg-green-50 p-4 rounded border border-green-200">
@@ -322,33 +266,20 @@ export default function HubSpotPipelineDisplay() {
         </div>
       </div>
 
-      {/* Ticket pipeline SQs (live from all production stages) */}
+      {/* Roofing SQs across pipeline */}
       {roofingSquares && (roofingSquares.metal > 0 || roofingSquares.shingles > 0) && (
         <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-          <div className="flex justify-between items-center mb-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Ticket Pipeline — Live SQs Across All Production Stages
-            </p>
-            <button
-              onClick={handlePushTicketsToForecast}
-              disabled={pushingTickets || loading}
-              className="px-3 py-1 bg-teal-600 text-white text-xs rounded hover:bg-teal-700 disabled:opacity-50 font-medium"
-            >
-              {pushingTickets ? 'Pushing…' : '↓ Push to Sales Forecast'}
-            </button>
-          </div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Pipeline — Roofing SQs by Type
+          </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-cyan-50 p-3 rounded border border-cyan-200">
               <p className="text-xs text-cyan-600 font-medium">Shingle SQs</p>
-              <p className="text-xl font-bold text-cyan-900">
-                {roofingSquares.shingles.toFixed(0)}
-              </p>
+              <p className="text-xl font-bold text-cyan-900">{roofingSquares.shingles.toFixed(0)}</p>
             </div>
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
               <p className="text-xs text-orange-600 font-medium">Metal SQs</p>
-              <p className="text-xl font-bold text-orange-900">
-                {roofingSquares.metal.toFixed(0)}
-              </p>
+              <p className="text-xl font-bold text-orange-900">{roofingSquares.metal.toFixed(0)}</p>
             </div>
           </div>
         </div>
@@ -377,15 +308,15 @@ export default function HubSpotPipelineDisplay() {
 
       {/* Deals table */}
       {loading ? (
-        <div className="text-center py-8 text-gray-500">Loading HubSpot deals…</div>
+        <div className="text-center py-8 text-gray-500">Loading JobNimbus jobs…</div>
       ) : filteredDeals.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">No deals in pipeline</div>
+        <div className="text-center py-8 text-gray-500">No jobs in pipeline</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-100 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-700">Deal Name</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-700">Job Name</th>
                 <th className="px-4 py-3 text-center font-medium text-gray-700">Job Type</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-700">Roof SQs</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-700">Gross Value</th>
@@ -395,7 +326,7 @@ export default function HubSpotPipelineDisplay() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredDeals.map((deal) => (
-                <tr key={deal.hubspot_id} className="hover:bg-gray-50">
+                <tr key={deal.jobnimbus_id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-900 font-medium">{deal.dealname}</td>
                   <td className="px-4 py-3 text-center">
                     <span
@@ -407,11 +338,10 @@ export default function HubSpotPipelineDisplay() {
                     >
                       {deal.job_type === 'shingle' ? 'Shingle' : 'Metal'}
                     </span>
-                    {/* Allow re-assignment if needed */}
                     <button
                       onClick={() =>
                         handleAssignType(
-                          deal.hubspot_id,
+                          deal.jobnimbus_id,
                           deal.job_type === 'shingle' ? 'metal' : 'shingle'
                         )
                       }
@@ -424,7 +354,12 @@ export default function HubSpotPipelineDisplay() {
                   <td className="px-4 py-3 text-right text-gray-900">
                     {deal.roof_sqs}
                     {deal.using_default_sqs && (
-                      <span className="ml-1 text-xs text-gray-400 italic" title="Sales hasn't entered roof squares yet — using 30 SQ default">est.</span>
+                      <span
+                        className="ml-1 text-xs text-gray-400 italic"
+                        title="No roof squares in JobNimbus yet — using 30 SQ default"
+                      >
+                        est.
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-900">
@@ -444,11 +379,11 @@ export default function HubSpotPipelineDisplay() {
       )}
 
       <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500">
-        Roof SQs: actual value from HubSpot, or <strong>30 SQ default</strong> until sales enters it (<em>est.</em> label).{' '}
+        Roof SQs: actual value from JobNimbus, or <strong>30 SQ default</strong> until it's entered (<em>est.</em> label).{' '}
         Gross Value = Roof SQs × per-SQ price (Shingle ${REVENUE_PER_SQ.shingles}/SQ · Metal ${REVENUE_PER_SQ.metal}/SQ).{' '}
         Weighted Value = Gross Value × {(CLOSING_RATE * 100).toFixed(0)}% closing rate.{' '}
         Est. SQs = Roof SQs × {(CLOSING_RATE * 100).toFixed(0)}%.{' '}
-        <strong>Push to Sales Forecast</strong> distributes estimated SQs evenly across all 26 weeks.
+        <strong>Push to Sales Forecast</strong> distributes estimated SQs evenly across the nearest 8 weeks.
       </div>
     </div>
   );

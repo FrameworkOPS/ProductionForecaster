@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import dotenv from 'dotenv';
+import { SUMMIT_MATERIAL_PRICES } from './summitPriceSeed';
 
 dotenv.config();
 
@@ -366,6 +367,7 @@ export async function initializeDatabase(): Promise<void> {
       ALTER TABLE estimate_line_items ADD COLUMN IF NOT EXISTS material_key VARCHAR(150);
       ALTER TABLE estimate_line_items ADD COLUMN IF NOT EXISTS price_flagged BOOLEAN DEFAULT false;
       ALTER TABLE estimate_documents ADD COLUMN IF NOT EXISTS file_bytes BYTEA;
+      ALTER TABLE jobs ADD COLUMN IF NOT EXISTS jobnimbus_id VARCHAR(100);
     `);
 
     // Seed a starter price database (Pacific Northwest commercial roofing & siding).
@@ -427,6 +429,24 @@ export async function initializeDatabase(): Promise<void> {
         ('LABOR_INSTALL_TRIM', 'Siding - Labor', 'Install trim packages', 'LF', 4.50)
       ON CONFLICT (material_key) DO NOTHING;
     `);
+
+    // Import the Summit Exteriors price list (generated from their QuickBooks /
+    // JobNimbus Products & Services export). The export's "Cost" column populates
+    // unit_cost, the SKU goes into notes. Idempotent — existing keys are kept.
+    if (SUMMIT_MATERIAL_PRICES.length > 0) {
+      const values: any[] = [];
+      const tuples = SUMMIT_MATERIAL_PRICES.map((row, i) => {
+        const b = i * 6;
+        values.push(row[0], row[1], row[2], row[3], row[4], row[5] || null);
+        return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6})`;
+      });
+      await query(
+        `INSERT INTO material_prices (material_key, category, description, unit, unit_cost, notes)
+         VALUES ${tuples.join(', ')}
+         ON CONFLICT (material_key) DO NOTHING`,
+        values
+      );
+    }
 
     // Estimating: add stage column (workflow: new → plans_reviewed → quote_built)
     await query(`

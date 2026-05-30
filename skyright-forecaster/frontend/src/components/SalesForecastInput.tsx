@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { API_BASE_URL } from '../utils/apiConfig';
-import HubSpotPipelineDisplay from './HubSpotPipelineDisplay';
+import JobNimbusPipelineDisplay from './JobNimbusPipelineDisplay';
 
 interface SalesForecast {
   forecast_week: string;
@@ -314,8 +314,8 @@ export default function SalesForecastInput() {
         </div>
       )}
 
-      {/* HubSpot Pipeline — weighted Contract Signed deals + push-to-forecast button */}
-      <HubSpotPipelineDisplay />
+      {/* JobNimbus Pipeline — weighted jobs + push-to-forecast button */}
+      <JobNimbusPipelineDisplay />
 
       {/* 6-Month Forecast Table */}
       <div className="bg-white rounded-lg shadow overflow-x-auto">
