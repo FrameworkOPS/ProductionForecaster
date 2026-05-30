@@ -62,38 +62,52 @@ export const getPipelineSummary = asyncHandler(async (req: Request, res: Respons
 
   try {
     const service = new JobNimbusService(getApiKey());
-    const pipelineJobs = service.filterPipelineJobs(await service.fetchJobs());
+    const [jobsRaw, squaresByJob] = await Promise.all([
+      service.fetchJobs(),
+      service.fetchRoofSquaresByJob(),
+    ]);
+    // Forecast view includes the active pipeline (Sold / In Production) plus
+    // estimating-stage jobs, which squaresForJob weights down by the close rate.
+    const pipelineJobs = service.filterForecastJobs(jobsRaw);
 
-    const DEFAULT_SQS = 30;
     const deals = pipelineJobs
       .map((job) => {
         const jobType = service.classifyJobType(job);
         if (jobType === null) return null;
 
-        const raw = service.extractRoofSquares(job);
-        const roofSqs = raw > 0 ? raw : DEFAULT_SQS;
+        const estimating = service.isEstimating(job);
+        const rawSqs = service.rawSquaresForJob(job, squaresByJob);
+        // squaresForJob already applies the estimating close-rate weighting and
+        // the default-roof-size assumption; this is the forecast SQ figure.
+        const forecastSqs = service.squaresForJob(job, squaresByJob);
 
         const revenuePerSq = jobType === 'metal' ? REVENUE_PER_SQ.metal : REVENUE_PER_SQ.shingles;
-        const grossValue = roofSqs * revenuePerSq;
-        const weightedValue = grossValue * CLOSING_RATE;
-        const estimatedSqs = roofSqs * CLOSING_RATE;
+        // Display roof size: actual squares, or the default when none recorded.
+        const displaySqs = rawSqs > 0 ? rawSqs : 30;
+        const grossValue = displaySqs * revenuePerSq;
+        // Sold/in-production work counts in full; estimating is already weighted
+        // by close rate inside forecastSqs, so derive weighted value from it.
+        const weightedValue = forecastSqs * revenuePerSq;
 
         return {
           jobnimbus_id: job.jnid,
           dealname: job.display_name || job.name || 'Unnamed Job',
           job_type: jobType,
-          roof_sqs: roofSqs,
-          using_default_sqs: raw <= 0,
+          stage: estimating ? 'estimating' : 'pipeline',
+          roof_sqs: displaySqs,
+          using_default_sqs: rawSqs <= 0,
           gross_value: grossValue,
           weighted_value: weightedValue,
-          estimated_sqs: estimatedSqs,
+          estimated_sqs: forecastSqs,
         };
       })
       .filter((d): d is NonNullable<typeof d> => d !== null);
 
     const totalWeightedValue = deals.reduce((sum, d) => sum + d.weighted_value, 0);
     const totalWeightedSqs = deals.reduce((sum, d) => sum + d.estimated_sqs, 0);
-    const roofingSquares: RoofingSquaresSummary = service.aggregateRoofingSquares(pipelineJobs);
+    // aggregateRoofingSquares uses squaresForJob, so estimating jobs contribute
+    // their close-rate-weighted squares and sold work contributes full squares.
+    const roofingSquares: RoofingSquaresSummary = service.aggregateRoofingSquares(pipelineJobs, squaresByJob);
 
     res.json({
       success: true,

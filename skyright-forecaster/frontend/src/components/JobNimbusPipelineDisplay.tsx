@@ -7,6 +7,7 @@ interface JobNimbusDeal {
   jobnimbus_id: string;
   dealname: string;
   job_type: 'shingle' | 'metal';
+  stage?: 'estimating' | 'pipeline';
   roof_sqs: number;
   using_default_sqs: boolean;
   gross_value: number;
@@ -327,7 +328,17 @@ export default function JobNimbusPipelineDisplay() {
             <tbody className="divide-y divide-gray-200">
               {filteredDeals.map((deal) => (
                 <tr key={deal.jobnimbus_id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-900 font-medium">{deal.dealname}</td>
+                  <td className="px-4 py-3 text-gray-900 font-medium">
+                    {deal.dealname}
+                    {deal.stage === 'estimating' && (
+                      <span
+                        className="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 align-middle"
+                        title="Estimating stage — squares weighted by close rate"
+                      >
+                        Estimating
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span
                       className={`px-2 py-1 rounded text-xs font-semibold ${

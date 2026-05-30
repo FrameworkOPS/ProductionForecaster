@@ -23,6 +23,9 @@ function makeService(env: Record<string, string | undefined> = {}): JobNimbusSer
     'JOBNIMBUS_TYPE_FIELDS',
     'JOBNIMBUS_METAL_KEYWORDS',
     'JOBNIMBUS_SHINGLE_KEYWORDS',
+    'JOBNIMBUS_ESTIMATING_STATUSES',
+    'JOBNIMBUS_ESTIMATING_CLOSE_RATE',
+    'JOBNIMBUS_ESTIMATING_DEFAULT_SQS',
     'JOBNIMBUS_API_BASE',
   ];
   for (const k of keys) delete process.env[k];
@@ -123,6 +126,98 @@ describe('JobNimbusService', () => {
       ];
       expect(svc.aggregateRoofingSquares(jobs)).toEqual({ metal: 15, shingles: 20 });
     });
+
+    it('uses Work Order squares from the squaresByJob map over on-job values', () => {
+      const svc = makeService();
+      const jobs: JobNimbusJob[] = [
+        { jnid: 'j1', record_type_name: 'Metal Roof', roof_squares: '1' },
+      ];
+      const byJob = new Map<string, number>([['j1', 42]]);
+      expect(svc.aggregateRoofingSquares(jobs, byJob)).toEqual({ metal: 42, shingles: 0 });
+    });
+  });
+
+  describe('Summit field defaults (What Material? / # Of SQS)', () => {
+    const svc = makeService();
+
+    it('classifies from the "What Material?" job field', () => {
+      expect(svc.classifyJobType({ jnid: '1', 'What Material?': 'Asphalt Shingle' })).toBe('shingle');
+      expect(svc.classifyJobType({ jnid: '2', 'What Material?': 'Standing Seam Metal' })).toBe('metal');
+    });
+
+    it('reads squares from the "# Of SQS" field', () => {
+      expect(svc.extractRoofSquares({ jnid: '1', '# Of SQS': '27' })).toBe(27);
+    });
+  });
+
+  describe('Work Orders → squares-by-job', () => {
+    it('sums work-order squares onto the related job id', async () => {
+      const svc = makeService();
+      jest.spyOn(svc, 'fetchWorkOrders').mockResolvedValue([
+        { jnid: 'wo1', '# Of SQS': '20', related: [{ id: 'job-a', type: 'job' }] },
+        { jnid: 'wo2', '# Of SQS': '5', related: [{ id: 'job-a', type: 'job' }] },
+        { jnid: 'wo3', '# Of SQS': '12', primary: { id: 'job-b', type: 'job' } },
+        { jnid: 'wo4', '# Of SQS': '0', related: [{ id: 'job-c', type: 'job' }] }, // skipped
+      ]);
+      const map = await svc.fetchRoofSquaresByJob();
+      expect(map.get('job-a')).toBe(25);
+      expect(map.get('job-b')).toBe(12);
+      expect(map.has('job-c')).toBe(false);
+    });
+
+    it('fails soft to an empty map when work orders error', async () => {
+      const svc = makeService();
+      jest.spyOn(svc, 'fetchWorkOrders').mockRejectedValue(new Error('boom'));
+      const map = await svc.fetchRoofSquaresByJob();
+      expect(map.size).toBe(0);
+    });
+  });
+
+  describe('estimating-stage weighting', () => {
+    it('weights estimating jobs by close rate against the default roof size', () => {
+      const svc = makeService(); // defaults: estimating status, 0.35, 30 SQS
+      const job: JobNimbusJob = { jnid: 'e1', status_name: 'Estimating', 'What Material?': 'Shingle' };
+      // 30 default × 0.35 = 10.5
+      expect(svc.squaresForJob(job)).toBeCloseTo(10.5);
+    });
+
+    it('weights estimating jobs against measured squares when present', () => {
+      const svc = makeService();
+      const job: JobNimbusJob = { jnid: 'e2', status_name: 'Estimating' };
+      const byJob = new Map([['e2', 40]]);
+      // 40 measured × 0.35 = 14
+      expect(svc.squaresForJob(job, byJob)).toBeCloseTo(14);
+    });
+
+    it('does not weight sold jobs — uses full measured squares', () => {
+      const svc = makeService();
+      const job: JobNimbusJob = { jnid: 's1', status_name: 'Sold' };
+      const byJob = new Map([['s1', 40]]);
+      expect(svc.squaresForJob(job, byJob)).toBe(40);
+    });
+
+    it('honors custom close rate and default SQS from env', () => {
+      const svc = makeService({
+        JOBNIMBUS_ESTIMATING_STATUSES: 'quoting',
+        JOBNIMBUS_ESTIMATING_CLOSE_RATE: '0.5',
+        JOBNIMBUS_ESTIMATING_DEFAULT_SQS: '25',
+      });
+      const job: JobNimbusJob = { jnid: 'q1', status_name: 'Quoting' };
+      // 25 × 0.5 = 12.5
+      expect(svc.squaresForJob(job)).toBeCloseTo(12.5);
+    });
+
+    it('filterForecastJobs includes estimating jobs alongside pipeline statuses', () => {
+      const svc = makeService({ JOBNIMBUS_PIPELINE_STATUSES: 'Sold,In Production' });
+      const jobs: JobNimbusJob[] = [
+        { jnid: '1', status_name: 'Sold' },
+        { jnid: '2', status_name: 'Estimating' },
+        { jnid: '3', status_name: 'Lead' },
+        { jnid: '4', status_name: 'In Production' },
+      ];
+      const ids = svc.filterForecastJobs(jobs).map((j) => j.jnid).sort();
+      expect(ids).toEqual(['1', '2', '4']);
+    });
   });
 
   describe('mapJobData', () => {
@@ -167,6 +262,7 @@ describe('JobNimbusService', () => {
         { jnid: 'existing-1', record_type_name: 'Shingle Roof', roof_squares: '15', status_name: 'Contract Signed' },
       ];
       jest.spyOn(svc, 'fetchJobs').mockResolvedValue(jobs);
+      jest.spyOn(svc, 'fetchWorkOrders').mockResolvedValue([]);
 
       // First job: SELECT returns empty (insert). Second: SELECT returns a row (update).
       mockQuery.mockImplementation((sql: string) => {
@@ -193,6 +289,7 @@ describe('JobNimbusService', () => {
         { jnid: 'a', status_name: 'Contract Signed', record_type_name: 'Metal Roof' },
         { jnid: 'b', status_name: 'Lead', record_type_name: 'Metal Roof' },
       ]);
+      jest.spyOn(svc, 'fetchWorkOrders').mockResolvedValue([]);
       mockQuery.mockResolvedValue({ rows: [] });
 
       const result = await svc.syncJobs('user-1');
