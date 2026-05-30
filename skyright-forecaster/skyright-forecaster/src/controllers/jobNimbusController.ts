@@ -28,6 +28,28 @@ export const getJobNimbusStatus = asyncHandler(async (req: Request, res: Respons
   });
 });
 
+/**
+ * GET /api/jobnimbus/debug
+ * Diagnostic: reports what JobNimbus returns and how jobs classify, so we can
+ * see why the pipeline panel may be empty (e.g. custom fields not returned by
+ * the list endpoint, or status names not matching the configured filters).
+ */
+export const debugJobNimbus = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw new AppError('User not authenticated', 401);
+
+  try {
+    const service = new JobNimbusService(getApiKey());
+    const data = await service.debug();
+    res.json({ success: true, data });
+  } catch (error: any) {
+    if (error instanceof AppError) throw error;
+    const status = error?.response?.status;
+    const apiMsg = error?.response?.data?.message || error?.response?.data?.error;
+    const detail = apiMsg ? `JobNimbus ${status}: ${apiMsg}` : error?.message || 'Unknown error';
+    res.json({ success: false, error: detail });
+  }
+});
+
 export const syncJobs = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) throw new AppError('User not authenticated', 401);
 
