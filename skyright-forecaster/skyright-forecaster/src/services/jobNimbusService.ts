@@ -127,8 +127,16 @@ export class JobNimbusService {
       'name',
       'display_name',
     ]);
-    this.metalKeywords = csvEnv('JOBNIMBUS_METAL_KEYWORDS', ['metal']).map((s) => s.toLowerCase());
-    this.shingleKeywords = csvEnv('JOBNIMBUS_SHINGLE_KEYWORDS', ['shingle']).map((s) =>
+    // Defaults map the Summit account's "What Material?" values:
+    //   metal   ← Standing Seam, Exposed Fastener, anything with "metal"
+    //   shingle ← Shingles, Premium Shingles, Synthetic
+    //   Gutters matches neither, so gutter jobs are excluded from the forecast.
+    this.metalKeywords = csvEnv('JOBNIMBUS_METAL_KEYWORDS', [
+      'metal',
+      'standing seam',
+      'exposed fastener',
+    ]).map((s) => s.toLowerCase());
+    this.shingleKeywords = csvEnv('JOBNIMBUS_SHINGLE_KEYWORDS', ['shingle', 'synthetic']).map((s) =>
       s.toLowerCase()
     );
 
