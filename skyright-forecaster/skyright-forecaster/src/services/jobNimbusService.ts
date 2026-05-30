@@ -138,6 +138,58 @@ export class JobNimbusService {
   }
 
   /**
+   * Diagnostic snapshot — used by GET /api/jobnimbus/debug to see exactly what
+   * JobNimbus returns and why jobs may not be classifying. Never throws on the
+   * work-order side.
+   */
+  async debug(): Promise<Record<string, any>> {
+    const jobs = await this.fetchJobs();
+    const squaresByJob = await this.fetchRoofSquaresByJob();
+
+    // Tally status names so we can see what to put in PIPELINE/ESTIMATING vars.
+    const statusCounts: Record<string, number> = {};
+    for (const j of jobs) {
+      const s = j.status_name || '(none)';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    }
+
+    const classified = jobs.filter((j) => this.classifyJobType(j) !== null).length;
+    const forecastJobs = this.filterForecastJobs(jobs);
+    const withSquares = jobs.filter((j) => this.rawSquaresForJob(j, squaresByJob) > 0).length;
+
+    const sample = jobs[0] || null;
+    return {
+      totalJobs: jobs.length,
+      statusCounts,
+      classifiedAsMetalOrShingle: classified,
+      forecastJobCount: forecastJobs.length,
+      jobsWithSquares: withSquares,
+      workOrdersLinkedToJobs: squaresByJob.size,
+      config: {
+        pipelineStatuses: this.pipelineStatuses,
+        estimatingStatuses: this.estimatingStatuses,
+        typeFields: this.typeFields,
+        roofSquaresFields: this.roofSquaresFields,
+        metalKeywords: this.metalKeywords,
+        shingleKeywords: this.shingleKeywords,
+      },
+      // Field names present on the first job — reveals whether custom fields
+      // like "What Material?" actually come back from the list endpoint.
+      sampleJobFieldNames: sample ? Object.keys(sample).sort() : [],
+      sampleJobValues: sample
+        ? {
+            jnid: sample.jnid,
+            status_name: sample.status_name,
+            record_type_name: sample.record_type_name,
+            'What Material?': sample['What Material?'] ?? null,
+            '# Of SQS': sample['# Of SQS'] ?? null,
+            classifiedAs: this.classifyJobType(sample),
+          }
+        : null,
+    };
+  }
+
+  /**
    * Fetch jobs from JobNimbus, paginating until exhausted. JobNimbus returns
    * { count, results } and accepts `from` / `size` query params.
    */
