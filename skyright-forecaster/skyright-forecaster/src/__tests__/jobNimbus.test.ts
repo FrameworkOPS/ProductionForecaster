@@ -103,8 +103,8 @@ describe('JobNimbusService', () => {
       { jnid: '3', status_name: 'Estimating' },
     ];
 
-    it('returns all jobs when no statuses configured', () => {
-      const svc = makeService();
+    it('returns all jobs when statuses are explicitly cleared (*)', () => {
+      const svc = makeService({ JOBNIMBUS_PIPELINE_STATUSES: '*' });
       expect(svc.filterPipelineJobs(jobs)).toHaveLength(3);
     });
 
@@ -175,25 +175,43 @@ describe('JobNimbusService', () => {
 
   describe('estimating-stage weighting', () => {
     it('weights estimating jobs by close rate against the default roof size', () => {
-      const svc = makeService(); // defaults: estimating status, 0.35, 30 SQS
+      const svc = makeService({ JOBNIMBUS_ESTIMATING_STATUSES: 'Estimating' }); // 0.35, 30 SQS
       const job: JobNimbusJob = { jnid: 'e1', status_name: 'Estimating', 'What Material?': 'Shingle' };
       // 30 default × 0.35 = 10.5
       expect(svc.squaresForJob(job)).toBeCloseTo(10.5);
     });
 
     it('weights estimating jobs against measured squares when present', () => {
-      const svc = makeService();
+      const svc = makeService({ JOBNIMBUS_ESTIMATING_STATUSES: 'Estimating' });
       const job: JobNimbusJob = { jnid: 'e2', status_name: 'Estimating' };
       const byJob = new Map([['e2', 40]]);
       // 40 measured × 0.35 = 14
       expect(svc.squaresForJob(job, byJob)).toBeCloseTo(14);
     });
 
-    it('does not weight sold jobs — uses full measured squares', () => {
-      const svc = makeService();
-      const job: JobNimbusJob = { jnid: 's1', status_name: 'Sold' };
+    it('does not weight non-estimating (sold) jobs — uses full measured squares', () => {
+      const svc = makeService({ JOBNIMBUS_ESTIMATING_STATUSES: 'Estimating' });
+      const job: JobNimbusJob = { jnid: 's1', status_name: 'Signed Contract' };
       const byJob = new Map([['s1', 40]]);
       expect(svc.squaresForJob(job, byJob)).toBe(40);
+    });
+
+    it('uses the Summit account default statuses', () => {
+      const svc = makeService(); // no env → account defaults
+      // Contract Sent is the default estimating status
+      expect(svc.isEstimating({ jnid: 'x', status_name: 'Contract Sent' })).toBe(true);
+      expect(svc.isEstimating({ jnid: 'y', status_name: 'Signed Contract' })).toBe(false);
+      // Signed Contract / Sent To Production are default pipeline (forecast) statuses
+      const ids = svc
+        .filterForecastJobs([
+          { jnid: '1', status_name: 'Signed Contract' },
+          { jnid: '2', status_name: 'Contract Sent' },
+          { jnid: '3', status_name: 'Lead' },
+          { jnid: '4', status_name: 'Sent To Production' },
+        ])
+        .map((j) => j.jnid)
+        .sort();
+      expect(ids).toEqual(['1', '2', '4']);
     });
 
     it('honors custom close rate and default SQS from env', () => {
@@ -208,7 +226,10 @@ describe('JobNimbusService', () => {
     });
 
     it('filterForecastJobs includes estimating jobs alongside pipeline statuses', () => {
-      const svc = makeService({ JOBNIMBUS_PIPELINE_STATUSES: 'Sold,In Production' });
+      const svc = makeService({
+        JOBNIMBUS_PIPELINE_STATUSES: 'Sold,In Production',
+        JOBNIMBUS_ESTIMATING_STATUSES: 'Estimating',
+      });
       const jobs: JobNimbusJob[] = [
         { jnid: '1', status_name: 'Sold' },
         { jnid: '2', status_name: 'Estimating' },
@@ -254,7 +275,8 @@ describe('JobNimbusService', () => {
 
   describe('syncJobs (mocked DB)', () => {
     it('inserts new jobs and updates existing ones', async () => {
-      const svc = makeService();
+      // syncJobs uses filterPipelineJobs; "*" includes every job regardless of status.
+      const svc = makeService({ JOBNIMBUS_PIPELINE_STATUSES: '*' });
 
       // Stub fetchJobs so no network call happens.
       const jobs: JobNimbusJob[] = [

@@ -28,15 +28,23 @@ Set these environment variables on the backend (Railway, `.env`, etc.):
 
 ### Summit Exteriors values
 
-For the Summit account, set:
+For the Summit account, the only required variable is the API key:
 
 ```
 JOBNIMBUS_API_KEY=<your key>
-JOBNIMBUS_PIPELINE_STATUSES=Sold,In Production
-JOBNIMBUS_ESTIMATING_STATUSES=Estimating
 ```
 
-The `# Of SQS`, `What Material?`, close-rate (0.35) and default-SQS (30) defaults already match your account, so those vars are optional. Adjust `JOBNIMBUS_METAL_KEYWORDS` / `JOBNIMBUS_SHINGLE_KEYWORDS` if your "What Material?" values use words other than "metal" / "shingle".
+The code defaults now match the Summit account:
+- **Firm/sold pipeline** (full squares): `Signed Contract`, `Sent To Production`, `T/O to Production`, `Long Term Schedule`
+- **Estimating** (weighted 35% × 30 SQS default): `Contract Sent`
+- **Squares field**: `# Of SQS` (Work Order) · **Material field**: `What Material?` (Job)
+- **Close rate** 0.35 · **default roof size** 30 SQS
+
+Override any of them with the matching env var (e.g. `JOBNIMBUS_PIPELINE_STATUSES`, `JOBNIMBUS_ESTIMATING_STATUSES`). Set `JOBNIMBUS_PIPELINE_STATUSES=*` to include **all** jobs regardless of status. Adjust `JOBNIMBUS_METAL_KEYWORDS` / `JOBNIMBUS_SHINGLE_KEYWORDS` if your "What Material?" values use words other than "metal" / "shingle".
+
+### Diagnosing
+
+Use the **Run Diagnostic** button on the JobNimbus Setup tab (or `GET /api/jobnimbus/debug`) to see status-name counts, how many jobs classify as metal/shingle, how often `What Material?` is populated, and the record-type distribution.
 
 > **Roof squares live on Work Orders.** The integration fetches `/workorders` in addition to `/jobs` and joins each work order's `# Of SQS` back to its parent job. If work orders can't be read, jobs still sync and fall back to the default roof size.
 

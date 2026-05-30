@@ -100,7 +100,17 @@ export class JobNimbusService {
       },
     });
 
-    this.pipelineStatuses = csvEnv('JOBNIMBUS_PIPELINE_STATUSES', []).map((s) => s.toLowerCase());
+    // Defaults match the Summit JobNimbus account's firm/sold statuses; override
+    // via JOBNIMBUS_PIPELINE_STATUSES. Set it to "*" to include all jobs.
+    const pipelineRaw = csvEnv('JOBNIMBUS_PIPELINE_STATUSES', [
+      'Signed Contract',
+      'Sent To Production',
+      'T/O to Production',
+      'Long Term Schedule',
+    ]);
+    this.pipelineStatuses = pipelineRaw.includes('*')
+      ? []
+      : pipelineRaw.map((s) => s.toLowerCase());
     this.roofSquaresFields = csvEnv('JOBNIMBUS_ROOF_SQUARES_FIELDS', [
       '# Of SQS',
       'roof_squares',
@@ -125,7 +135,7 @@ export class JobNimbusService {
     // Estimating-stage jobs are speculative: weight their squares by a close
     // rate and assume a default roof size since squares often aren't measured
     // until the job is sold. All tunable via env.
-    this.estimatingStatuses = csvEnv('JOBNIMBUS_ESTIMATING_STATUSES', ['estimating']).map((s) =>
+    this.estimatingStatuses = csvEnv('JOBNIMBUS_ESTIMATING_STATUSES', ['Contract Sent']).map((s) =>
       s.toLowerCase()
     );
     this.estimatingCloseRate = numEnv('JOBNIMBUS_ESTIMATING_CLOSE_RATE', 0.35);
@@ -157,6 +167,27 @@ export class JobNimbusService {
     const forecastJobs = this.filterForecastJobs(jobs);
     const withSquares = jobs.filter((j) => this.rawSquaresForJob(j, squaresByJob) > 0).length;
 
+    // How often is the material field actually populated, and what values does
+    // it take? Confirms whether "What Material?" comes back from the list API.
+    const materialField = this.typeFields[0]; // configured material field, e.g. "What Material?"
+    const materialValueCounts: Record<string, number> = {};
+    let jobsWithMaterial = 0;
+    for (const j of jobs) {
+      const v = j[materialField];
+      if (v != null && v !== '') {
+        jobsWithMaterial++;
+        const key = String(v);
+        materialValueCounts[key] = (materialValueCounts[key] || 0) + 1;
+      }
+    }
+
+    // record_type_name distribution — a fallback signal for roof type.
+    const recordTypeCounts: Record<string, number> = {};
+    for (const j of jobs) {
+      const v = j.record_type_name || '(none)';
+      recordTypeCounts[v] = (recordTypeCounts[v] || 0) + 1;
+    }
+
     const sample = jobs[0] || null;
     return {
       totalJobs: jobs.length,
@@ -165,6 +196,10 @@ export class JobNimbusService {
       forecastJobCount: forecastJobs.length,
       jobsWithSquares: withSquares,
       workOrdersLinkedToJobs: squaresByJob.size,
+      materialField,
+      jobsWithMaterialField: jobsWithMaterial,
+      materialValueCounts,
+      recordTypeCounts,
       config: {
         pipelineStatuses: this.pipelineStatuses,
         estimatingStatuses: this.estimatingStatuses,
