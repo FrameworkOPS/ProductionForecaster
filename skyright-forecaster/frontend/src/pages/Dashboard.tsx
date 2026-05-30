@@ -6,9 +6,9 @@ import PipelineTracker from '../components/PipelineTracker';
 import SalesForecastInput from '../components/SalesForecastInput';
 import MetricsDashboard from '../components/MetricsDashboard';
 import SixMonthForecaster from '../components/SixMonthForecaster';
-import HubSpotSetup from '../components/HubSpotSetup';
+import JobNimbusSetup from '../components/JobNimbusSetup';
 
-type TabType = 'forecast' | 'crews' | 'projects' | 'pipeline' | 'sales' | 'metrics' | 'hubspot-setup';
+type TabType = 'forecast' | 'crews' | 'projects' | 'pipeline' | 'sales' | 'metrics' | 'jobnimbus-setup';
 
 export default function Dashboard() {
   const { user } = useAuthStore();
@@ -87,14 +87,14 @@ export default function Dashboard() {
               Metrics
             </button>
             <button
-              onClick={() => setActiveTab('hubspot-setup')}
+              onClick={() => setActiveTab('jobnimbus-setup')}
               className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'hubspot-setup'
+                activeTab === 'jobnimbus-setup'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
               }`}
             >
-              HubSpot Setup
+              JobNimbus Setup
             </button>
           </div>
         </div>
@@ -117,8 +117,8 @@ export default function Dashboard() {
         {/* Forecast Tab */}
         {activeTab === 'forecast' && <SixMonthForecaster />}
 
-        {/* HubSpot Setup Tab */}
-        {activeTab === 'hubspot-setup' && <HubSpotSetup />}
+        {/* JobNimbus Setup Tab */}
+        {activeTab === 'jobnimbus-setup' && <JobNimbusSetup />}
       </div>
     </div>
   );

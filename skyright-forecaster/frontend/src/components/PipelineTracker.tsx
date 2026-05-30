@@ -29,7 +29,7 @@ interface PipelineSummary {
   combined?: { totalSQs: number; jobCount: number };
 }
 
-interface HubSpotSQs {
+interface JobNimbusSQs {
   shingles: number;
   metal: number;
 }
@@ -39,7 +39,7 @@ const MANUAL_NOTE = 'Manual pipeline input';
 export default function PipelineTracker() {
   const { token } = useAuthStore();
   const [summary, setSummary] = useState<PipelineSummary | null>(null);
-  const [hubspotSQs, setHubspotSQs] = useState<HubSpotSQs | null>(null);
+  const [jobNimbusSQs, setJobNimbusSQs] = useState<JobNimbusSQs | null>(null);
   const [crews, setCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingPipeline, setSavingPipeline] = useState(false);
@@ -50,7 +50,7 @@ export default function PipelineTracker() {
   useEffect(() => {
     loadSummary();
     loadCrews();
-    loadHubSpotSQs();
+    loadJobNimbusSQs();
   }, []);
 
   // ─── Data loaders ──────────────────────────────────────────────────────────
@@ -99,19 +99,19 @@ export default function PipelineTracker() {
     }
   };
 
-  /** Pull live roofing SQs from HubSpot ticket pipeline (all production stages). */
-  const loadHubSpotSQs = async () => {
+  /** Pull live roofing SQs from the JobNimbus pipeline. */
+  const loadJobNimbusSQs = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/hubspot/pipeline-summary`, {
+      const res = await fetch(`${API_BASE_URL}/api/jobnimbus/pipeline-summary`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
         const sqs = data.data?.roofingSquares;
-        if (sqs) setHubspotSQs({ shingles: sqs.shingles ?? 0, metal: sqs.metal ?? 0 });
+        if (sqs) setJobNimbusSQs({ shingles: sqs.shingles ?? 0, metal: sqs.metal ?? 0 });
       }
     } catch {
-      // HubSpot may not be configured — fail silently
+      // JobNimbus may not be configured — fail silently
     }
   };
 
@@ -279,31 +279,31 @@ export default function PipelineTracker() {
         </button>
       </div>
 
-      {/* ── HubSpot Ticket Pipeline (live) ─────────────────────────────────── */}
-      {hubspotSQs && (hubspotSQs.shingles > 0 || hubspotSQs.metal > 0) && (
+      {/* ── JobNimbus Pipeline (live) ──────────────────────────────────────── */}
+      {jobNimbusSQs && (jobNimbusSQs.shingles > 0 || jobNimbusSQs.metal > 0) && (
         <div>
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            HubSpot Ticket Pipeline — Live SQs (All Production Stages)
+            JobNimbus Pipeline — Live SQs by Type
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-200">
               <p className="text-sm font-medium text-cyan-600">Shingle SQs</p>
               <p className="text-2xl font-bold text-cyan-900">
-                {hubspotSQs.shingles.toFixed(0)}
+                {jobNimbusSQs.shingles.toFixed(0)}
               </p>
-              <p className="text-xs text-cyan-700">from ticket pipeline</p>
+              <p className="text-xs text-cyan-700">from JobNimbus pipeline</p>
             </div>
             <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
               <p className="text-sm font-medium text-orange-600">Metal SQs</p>
               <p className="text-2xl font-bold text-orange-900">
-                {hubspotSQs.metal.toFixed(0)}
+                {jobNimbusSQs.metal.toFixed(0)}
               </p>
-              <p className="text-xs text-orange-700">from ticket pipeline</p>
+              <p className="text-xs text-orange-700">from JobNimbus pipeline</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <p className="text-sm font-medium text-gray-600">Total SQs</p>
               <p className="text-2xl font-bold text-gray-900">
-                {(hubspotSQs.shingles + hubspotSQs.metal).toFixed(0)}
+                {(jobNimbusSQs.shingles + jobNimbusSQs.metal).toFixed(0)}
               </p>
               <p className="text-xs text-gray-500">shingle + metal</p>
             </div>
