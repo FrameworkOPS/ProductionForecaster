@@ -86,6 +86,7 @@ export class JobNimbusService {
   private readonly typeFields: string[];
   private readonly metalKeywords: string[];
   private readonly shingleKeywords: string[];
+  private readonly gutterKeywords: string[];
   private readonly estimatingStatuses: string[];
   private readonly estimatingCloseRate: number;
   private readonly estimatingDefaultSqs: number;
@@ -137,6 +138,11 @@ export class JobNimbusService {
       'exposed fastener',
     ]).map((s) => s.toLowerCase());
     this.shingleKeywords = csvEnv('JOBNIMBUS_SHINGLE_KEYWORDS', ['shingle', 'synthetic']).map((s) =>
+      s.toLowerCase()
+    );
+    // Gutters are tracked separately (by job count + crew type), not by squares,
+    // so they're kept out of classifyJobType / the squares-based forecast.
+    this.gutterKeywords = csvEnv('JOBNIMBUS_GUTTER_KEYWORDS', ['gutter']).map((s) =>
       s.toLowerCase()
     );
 
@@ -215,7 +221,10 @@ export class JobNimbusService {
         roofSquaresFields: this.roofSquaresFields,
         metalKeywords: this.metalKeywords,
         shingleKeywords: this.shingleKeywords,
+        gutterKeywords: this.gutterKeywords,
       },
+      gutterJobsTotal: jobs.filter((j) => this.isGutterJob(j)).length,
+      gutterJobsInForecast: this.countGutterJobs(forecastJobs),
       // Field names present on the first job — reveals whether custom fields
       // like "What Material?" actually come back from the list endpoint.
       sampleJobFieldNames: sample ? Object.keys(sample).sort() : [],
@@ -355,6 +364,28 @@ export class JobNimbusService {
     if (this.metalKeywords.some((k) => haystack.includes(k))) return 'metal';
     if (this.shingleKeywords.some((k) => haystack.includes(k))) return 'shingle';
     return null;
+  }
+
+  /**
+   * Gutters are a distinct trade tracked by job count + crew type, not roof
+   * squares. Kept separate from classifyJobType so they never enter the
+   * squares-based shingle/metal forecast.
+   */
+  isGutterJob(job: JobNimbusJob): boolean {
+    const haystack = this.typeFields
+      .map((f) => job[f])
+      .filter((v) => v != null && v !== '')
+      .join(' ')
+      .toLowerCase();
+    // Only a gutter job if it matches a gutter keyword and isn't a roof type.
+    if (this.metalKeywords.some((k) => haystack.includes(k))) return false;
+    if (this.shingleKeywords.some((k) => haystack.includes(k))) return false;
+    return this.gutterKeywords.some((k) => haystack.includes(k));
+  }
+
+  /** Count gutter jobs within a set (e.g. the forecast-filtered jobs). */
+  countGutterJobs(jobs: JobNimbusJob[]): number {
+    return jobs.filter((j) => this.isGutterJob(j)).length;
   }
 
   /**

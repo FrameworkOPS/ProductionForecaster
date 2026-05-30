@@ -38,7 +38,8 @@ The code defaults now match the Summit account:
 - **Firm/sold pipeline** (full squares): `Signed Contract`, `Sent To Production`, `T/O to Production`, `Long Term Schedule`
 - **Estimating** (weighted 35% × 30 SQS default): `Contract Sent`
 - **Squares field**: `# Of SQS` (Work Order) · **Material field**: `What Material?` (Job)
-- **Material → bucket**: metal ← `Standing Seam`, `Exposed Fastener` (and anything with "metal"); shingle ← `Shingles`, `Premium Shingles`, `Synthetic`; `Gutters` → excluded
+- **Material → bucket**: metal ← `Standing Seam`, `Exposed Fastener` (and anything with "metal"); shingle ← `Shingles`, `Premium Shingles`, `Synthetic`
+- **Gutters** (keyword `gutter`, override `JOBNIMBUS_GUTTER_KEYWORDS`) are tracked separately by **job count + crew type "gutters"** — not roof squares — so they never enter the shingle/metal squares forecast. The pipeline panel shows total / firm / estimating gutter job counts.
 - **Close rate** 0.35 · **default roof size** 30 SQS
 
 Override any of them with the matching env var (e.g. `JOBNIMBUS_PIPELINE_STATUSES`, `JOBNIMBUS_ESTIMATING_STATUSES`). Set `JOBNIMBUS_PIPELINE_STATUSES=*` to include **all** jobs regardless of status. Adjust `JOBNIMBUS_METAL_KEYWORDS` / `JOBNIMBUS_SHINGLE_KEYWORDS` if your "What Material?" values use words other than "metal" / "shingle".
