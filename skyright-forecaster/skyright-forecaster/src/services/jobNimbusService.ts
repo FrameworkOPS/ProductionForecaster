@@ -16,18 +16,22 @@ import { getUUID } from '../utils/uuid';
  *   JOBNIMBUS_API_KEY            — required, the API key from JobNimbus settings
  *   JOBNIMBUS_API_BASE           — optional, defaults to https://app.jobnimbus.com/api1
  *   JOBNIMBUS_PIPELINE_STATUSES  — optional CSV of status names that count as the
- *                                  active sales pipeline (e.g. "Contract Signed,Estimating").
+ *                                  active sales pipeline (e.g. "Sold,In Production").
  *                                  When unset, all jobs are included.
  *   JOBNIMBUS_ROOF_SQUARES_FIELDS — optional CSV of field names to read roof squares
- *                                  from, tried in order. Defaults to a set of common
- *                                  names (roof_squares, Roof Squares, squares, sqs).
+ *                                  from, tried in order. Defaults include the Summit
+ *                                  Work Order field "# Of SQS".
  *   JOBNIMBUS_TYPE_FIELDS        — optional CSV of field names to inspect when
- *                                  classifying metal vs. shingle. Defaults to
- *                                  record_type_name, status_name, name, display_name.
+ *                                  classifying metal vs. shingle. Defaults include the
+ *                                  Summit Job field "What Material?".
  *   JOBNIMBUS_METAL_KEYWORDS     — optional CSV of substrings that mark a metal job
  *                                  (default "metal").
  *   JOBNIMBUS_SHINGLE_KEYWORDS   — optional CSV of substrings that mark a shingle job
  *                                  (default "shingle").
+ *
+ * Note on roof squares: in this account the squares live on a Work Order custom
+ * field ("# Of SQS"), not on the Job. syncJobs / pipeline therefore fetch Work
+ * Orders too and join their squares back onto the parent job by jnid.
  */
 
 function csvEnv(name: string, fallback: string[]): string[] {
@@ -35,6 +39,13 @@ function csvEnv(name: string, fallback: string[]): string[] {
   if (!raw) return fallback;
   const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
   return parts.length > 0 ? parts : fallback;
+}
+
+function numEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const val = parseFloat(raw);
+  return Number.isNaN(val) ? fallback : val;
 }
 
 export interface JobNimbusJob {
@@ -75,6 +86,9 @@ export class JobNimbusService {
   private readonly typeFields: string[];
   private readonly metalKeywords: string[];
   private readonly shingleKeywords: string[];
+  private readonly estimatingStatuses: string[];
+  private readonly estimatingCloseRate: number;
+  private readonly estimatingDefaultSqs: number;
 
   constructor(apiKey: string) {
     const baseURL = process.env.JOBNIMBUS_API_BASE || 'https://app.jobnimbus.com/api1';
@@ -88,6 +102,7 @@ export class JobNimbusService {
 
     this.pipelineStatuses = csvEnv('JOBNIMBUS_PIPELINE_STATUSES', []).map((s) => s.toLowerCase());
     this.roofSquaresFields = csvEnv('JOBNIMBUS_ROOF_SQUARES_FIELDS', [
+      '# Of SQS',
       'roof_squares',
       'Roof Squares',
       'squares',
@@ -96,6 +111,7 @@ export class JobNimbusService {
       'SQs',
     ]);
     this.typeFields = csvEnv('JOBNIMBUS_TYPE_FIELDS', [
+      'What Material?',
       'record_type_name',
       'status_name',
       'name',
@@ -105,6 +121,20 @@ export class JobNimbusService {
     this.shingleKeywords = csvEnv('JOBNIMBUS_SHINGLE_KEYWORDS', ['shingle']).map((s) =>
       s.toLowerCase()
     );
+
+    // Estimating-stage jobs are speculative: weight their squares by a close
+    // rate and assume a default roof size since squares often aren't measured
+    // until the job is sold. All tunable via env.
+    this.estimatingStatuses = csvEnv('JOBNIMBUS_ESTIMATING_STATUSES', ['estimating']).map((s) =>
+      s.toLowerCase()
+    );
+    this.estimatingCloseRate = numEnv('JOBNIMBUS_ESTIMATING_CLOSE_RATE', 0.35);
+    this.estimatingDefaultSqs = numEnv('JOBNIMBUS_ESTIMATING_DEFAULT_SQS', 30);
+  }
+
+  /** True when a job is in an estimating (pre-sold) status. */
+  isEstimating(job: JobNimbusJob): boolean {
+    return this.estimatingStatuses.includes((job.status_name || '').toLowerCase());
   }
 
   /**
@@ -134,6 +164,65 @@ export class JobNimbusService {
   }
 
   /**
+   * Fetch Work Orders from JobNimbus, paginating until exhausted. Same
+   * { count, results } / from+size shape as /jobs.
+   */
+  async fetchWorkOrders(): Promise<JobNimbusJob[]> {
+    const all: JobNimbusJob[] = [];
+    const size = 100;
+    let from = 0;
+
+    for (let page = 0; page < 50; page++) {
+      const response = await this.apiClient.get('/workorders', { params: { from, size } });
+      const results: JobNimbusJob[] = response.data?.results || [];
+      all.push(...results);
+      if (results.length < size) break;
+      from += size;
+    }
+    return all;
+  }
+
+  /**
+   * Build a map of jobId → roof squares from Work Orders. A work order links to
+   * its parent job via `related[].id` (type 'job') or a `primary`/`job` ref.
+   * When multiple work orders touch the same job, their squares are summed.
+   *
+   * Fails soft: any error fetching work orders yields an empty map so jobs can
+   * still sync (they'll fall back to the default square count).
+   */
+  async fetchRoofSquaresByJob(): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    let workOrders: JobNimbusJob[];
+    try {
+      workOrders = await this.fetchWorkOrders();
+    } catch (error) {
+      console.warn('[JobNimbus] could not fetch work orders for squares:', (error as Error).message);
+      return map;
+    }
+
+    for (const wo of workOrders) {
+      const sqs = this.extractRoofSquares(wo);
+      if (sqs <= 0) continue;
+      for (const jobId of this.relatedJobIds(wo)) {
+        map.set(jobId, (map.get(jobId) || 0) + sqs);
+      }
+    }
+    return map;
+  }
+
+  /** Collect parent-job jnids a work order references. */
+  private relatedJobIds(wo: JobNimbusJob): string[] {
+    const ids = new Set<string>();
+    const related = Array.isArray(wo.related) ? wo.related : [];
+    for (const r of related) {
+      if (r && r.type === 'job' && r.id) ids.add(r.id);
+    }
+    if (wo.primary && wo.primary.type === 'job' && wo.primary.id) ids.add(wo.primary.id);
+    if (typeof wo.job === 'string') ids.add(wo.job);
+    return [...ids];
+  }
+
+  /**
    * Jobs in one of the configured pipeline statuses. When no statuses are
    * configured, every job is considered in-pipeline.
    */
@@ -142,6 +231,18 @@ export class JobNimbusService {
     return jobs.filter((j) =>
       this.pipelineStatuses.includes((j.status_name || '').toLowerCase())
     );
+  }
+
+  /**
+   * Jobs that should appear in the weighted sales forecast: the active pipeline
+   * statuses PLUS estimating-stage jobs (which are weighted down by the close
+   * rate in squaresForJob). When no pipeline statuses are configured, all jobs
+   * are already included.
+   */
+  filterForecastJobs(jobs: JobNimbusJob[]): JobNimbusJob[] {
+    if (this.pipelineStatuses.length === 0) return jobs;
+    const include = new Set([...this.pipelineStatuses, ...this.estimatingStatuses]);
+    return jobs.filter((j) => include.has((j.status_name || '').toLowerCase()));
   }
 
   /**
@@ -173,11 +274,56 @@ export class JobNimbusService {
     return 0;
   }
 
-  aggregateRoofingSquares(jobs: JobNimbusJob[]): RoofingSquaresSummary {
+  /**
+   * Raw (unweighted) roof squares for a job: prefer a Work Order value (passed
+   * in via the squaresByJob map) and fall back to any on-job custom field.
+   */
+  rawSquaresForJob(job: JobNimbusJob, squaresByJob?: Map<string, number>): number {
+    const fromWorkOrder = squaresByJob?.get(job.jnid) ?? 0;
+    if (fromWorkOrder > 0) return fromWorkOrder;
+    return this.extractRoofSquares(job);
+  }
+
+  /**
+   * Forecast roof squares for a job, applying estimating-stage weighting:
+   *   - Estimating (pre-sold): squares aren't measured yet, so assume the
+   *     default roof size and weight it by the close rate
+   *     (e.g. 30 SQS × 35% = 10.5 SQS expected).
+   *   - Sold / in production: use the actual measured squares at full weight,
+   *     falling back to the default size if none are recorded.
+   *
+   * The job's material ("What Material?") is read normally via classifyJobType,
+   * so an estimating job still counts toward the correct shingle/metal bucket.
+   */
+  squaresForJob(job: JobNimbusJob, squaresByJob?: Map<string, number>): number {
+    const raw = this.rawSquaresForJob(job, squaresByJob);
+    if (this.isEstimating(job)) {
+      const base = raw > 0 ? raw : this.estimatingDefaultSqs;
+      return base * this.estimatingCloseRate;
+    }
+    return raw;
+  }
+
+  /** Revenue for a job, reading JobNimbus's real money fields in priority order. */
+  revenueForJob(job: JobNimbusJob): number | undefined {
+    const candidates = [
+      job.approved_estimate_total,
+      job.last_estimate,
+      job.approved_invoice_total,
+      job.total,
+    ];
+    for (const c of candidates) {
+      const val = parseFloat(c);
+      if (!Number.isNaN(val) && val > 0) return val;
+    }
+    return undefined;
+  }
+
+  aggregateRoofingSquares(jobs: JobNimbusJob[], squaresByJob?: Map<string, number>): RoofingSquaresSummary {
     let metal = 0;
     let shingles = 0;
     for (const job of jobs) {
-      const sqs = this.extractRoofSquares(job);
+      const sqs = this.squaresForJob(job, squaresByJob);
       const type = this.classifyJobType(job);
       if (type === 'metal') metal += sqs;
       else if (type === 'shingle') shingles += sqs;
@@ -185,9 +331,9 @@ export class JobNimbusService {
     return { metal, shingles };
   }
 
-  mapJobData(job: JobNimbusJob): JobMapping {
+  mapJobData(job: JobNimbusJob, squaresByJob?: Map<string, number>): JobMapping {
     const type = this.classifyJobType(job);
-    const sqs = this.extractRoofSquares(job);
+    const sqs = this.squaresForJob(job, squaresByJob);
     return {
       jobId: job.jnid,
       installDate: this.formatDate(job.date_start || job.date_created),
@@ -195,7 +341,7 @@ export class JobNimbusService {
       crewSize: 3,
       crewType: type === 'metal' ? 'Metal Roof' : type === 'shingle' ? 'Shingles Roof' : undefined,
       squareFootage: sqs > 0 ? sqs : 30,
-      revenue: parseFloat(job.total) || undefined,
+      revenue: this.revenueForJob(job),
       customerName: job.display_name || job.name || 'Unnamed Job',
       jobAddress: [job.address_line1, job.city, job.state_text].filter(Boolean).join(', '),
     };
@@ -205,12 +351,16 @@ export class JobNimbusService {
    * Sync JobNimbus jobs into the local `jobs` table (upsert by job_id).
    */
   async syncJobs(_userId: string): Promise<{ created: number; updated: number; total: number }> {
-    const jobs = this.filterPipelineJobs(await this.fetchJobs());
+    const [jobsRaw, squaresByJob] = await Promise.all([
+      this.fetchJobs(),
+      this.fetchRoofSquaresByJob(),
+    ]);
+    const jobs = this.filterPipelineJobs(jobsRaw);
     let created = 0;
     let updated = 0;
 
     for (const job of jobs) {
-      const mapped = this.mapJobData(job);
+      const mapped = this.mapJobData(job, squaresByJob);
       const existing = await query('SELECT id FROM jobs WHERE job_id = $1', [mapped.jobId]);
 
       if (existing.rows.length > 0) {

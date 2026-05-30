@@ -17,13 +17,30 @@ Set these environment variables on the backend (Railway, `.env`, etc.):
 | --- | --- | --- |
 | `JOBNIMBUS_API_KEY` | Yes | API key from JobNimbus settings. |
 | `JOBNIMBUS_API_BASE` | No | API base URL. Defaults to `https://app.jobnimbus.com/api1`. |
-| `JOBNIMBUS_PIPELINE_STATUSES` | No | Comma-separated list of JobNimbus status names that count as the active sales pipeline (e.g. `Contract Signed,Estimating`). When unset, all jobs are included. |
-| `JOBNIMBUS_ROOF_SQUARES_FIELDS` | No | Comma-separated field names to read roof squares from, tried in order. Defaults to `roof_squares,Roof Squares,squares,Squares,sqs,SQs`. Set this to your account's exact custom-field name. |
-| `JOBNIMBUS_TYPE_FIELDS` | No | Comma-separated job fields inspected when classifying metal vs. shingle. Defaults to `record_type_name,status_name,name,display_name`. |
+| `JOBNIMBUS_PIPELINE_STATUSES` | No | Comma-separated JobNimbus status names that count as firm (sold) pipeline (e.g. `Sold,In Production`). When unset, all jobs are included. |
+| `JOBNIMBUS_ROOF_SQUARES_FIELDS` | No | Comma-separated field names to read roof squares from, tried in order. Defaults to `# Of SQS,roof_squares,Roof Squares,squares,Squares,sqs,SQs`. The Summit account stores this on the **Work Order** field `# Of SQS`. |
+| `JOBNIMBUS_TYPE_FIELDS` | No | Comma-separated job fields inspected when classifying metal vs. shingle. Defaults to `What Material?,record_type_name,status_name,name,display_name`. The Summit account uses the **Job** field `What Material?`. |
 | `JOBNIMBUS_METAL_KEYWORDS` | No | Comma-separated substrings that mark a metal job. Defaults to `metal`. |
 | `JOBNIMBUS_SHINGLE_KEYWORDS` | No | Comma-separated substrings that mark a shingle job. Defaults to `shingle`. |
+| `JOBNIMBUS_ESTIMATING_STATUSES` | No | Comma-separated status names treated as estimating (pre-sold). Defaults to `estimating`. |
+| `JOBNIMBUS_ESTIMATING_CLOSE_RATE` | No | Close-rate weighting applied to estimating-stage squares. Defaults to `0.35` (35%). |
+| `JOBNIMBUS_ESTIMATING_DEFAULT_SQS` | No | Assumed roof size (squares) for estimating jobs with no measured squares yet. Defaults to `30`. |
 
-> **Tuning to your account:** field and status names differ per JobNimbus account. Once you know your exact roof-squares custom-field name, job-type field, and pipeline status names, set the variables above — **no code change is needed**. The mapping logic is covered by unit tests (`src/__tests__/jobNimbus.test.ts`).
+### Summit Exteriors values
+
+For the Summit account, set:
+
+```
+JOBNIMBUS_API_KEY=<your key>
+JOBNIMBUS_PIPELINE_STATUSES=Sold,In Production
+JOBNIMBUS_ESTIMATING_STATUSES=Estimating
+```
+
+The `# Of SQS`, `What Material?`, close-rate (0.35) and default-SQS (30) defaults already match your account, so those vars are optional. Adjust `JOBNIMBUS_METAL_KEYWORDS` / `JOBNIMBUS_SHINGLE_KEYWORDS` if your "What Material?" values use words other than "metal" / "shingle".
+
+> **Roof squares live on Work Orders.** The integration fetches `/workorders` in addition to `/jobs` and joins each work order's `# Of SQS` back to its parent job. If work orders can't be read, jobs still sync and fall back to the default roof size.
+
+> **Tuning is config-only — no code change needed.** The mapping and weighting logic is covered by unit tests (`src/__tests__/jobNimbus.test.ts`).
 
 ## 3. Use it
 
@@ -34,14 +51,19 @@ Set these environment variables on the backend (Railway, `.env`, etc.):
 
 ## How jobs are interpreted
 
-- **Job type** (metal vs. shingle) is inferred from the job's record type /
-  status / name text (looks for "metal" or "shingle"). Jobs that match neither
-  are excluded from the weighted pipeline.
-- **Roof squares** are read from common custom-field names (`roof_squares`,
-  `Roof Squares`, `squares`, `sqs`). When none are present, a 30 SQ default is
-  used and flagged with an *est.* label.
-- **Weighted value / SQs** apply the configured closing rate (40%) and per-SQ
-  pricing from `businessConstants`.
+- **Job type** (metal vs. shingle) comes from the `What Material?` job field
+  (then record type / status / name as fallbacks). Jobs that match neither
+  keyword are excluded from the weighted pipeline.
+- **Roof squares** come from the `# Of SQS` Work Order field, joined to the job.
+  When none are present, the default roof size is used and flagged *est.*
+- **Estimating-stage jobs** (status in `JOBNIMBUS_ESTIMATING_STATUSES`) are
+  speculative, so their squares are weighted: `default roof size × close rate`
+  (e.g. 30 SQS × 35% = 10.5 expected SQS), or `measured squares × close rate`
+  if a work order already has them. Their material is still read from
+  `What Material?`, so they land in the correct shingle/metal bucket. They show
+  in the forecast with an **Estimating** badge.
+- **Sold / In Production jobs** count their full measured squares.
+- **Weighted value / SQs** apply per-SQ pricing from `businessConstants`.
 
 API endpoints (all require auth):
 
