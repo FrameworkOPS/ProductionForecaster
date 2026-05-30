@@ -28,12 +28,21 @@ export async function getConnection(): Promise<PoolClient> {
   return pool.connect();
 }
 
+// Per-query logging is noisy in production (a single JobNimbus sync fires
+// hundreds of queries and can trip Railway's 500 logs/sec limit). Off by
+// default; enable with DB_QUERY_LOGGING=true for debugging. Errors always log.
+const QUERY_LOGGING =
+  process.env.DB_QUERY_LOGGING === 'true' ||
+  (process.env.DB_QUERY_LOGGING !== 'false' && process.env.NODE_ENV !== 'production');
+
 export async function query(text: string, params?: any[]) {
   const start = Date.now();
   try {
     const result = await pool.query(text, params);
-    const duration = Date.now() - start;
-    console.log('Query executed', { text, duration, rows: result.rowCount });
+    if (QUERY_LOGGING) {
+      const duration = Date.now() - start;
+      console.log('Query executed', { text, duration, rows: result.rowCount });
+    }
     return result;
   } catch (error) {
     console.error('Database query error', error);
