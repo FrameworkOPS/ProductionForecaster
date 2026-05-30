@@ -148,6 +148,16 @@ describe('JobNimbusService', () => {
     it('reads squares from the "# Of SQS" field', () => {
       expect(svc.extractRoofSquares({ jnid: '1', '# Of SQS': '27' })).toBe(27);
     });
+
+    it('maps the real "What Material?" values to the right bucket', () => {
+      const m = (v: string) => svc.classifyJobType({ jnid: 'x', 'What Material?': v });
+      expect(m('Shingles')).toBe('shingle');
+      expect(m('Premium Shingles')).toBe('shingle');
+      expect(m('Synthetic')).toBe('shingle');
+      expect(m('Standing Seam')).toBe('metal');
+      expect(m('Exposed Fastener')).toBe('metal');
+      expect(m('Gutters')).toBeNull(); // excluded from the roof forecast
+    });
   });
 
   describe('Work Orders → squares-by-job', () => {
