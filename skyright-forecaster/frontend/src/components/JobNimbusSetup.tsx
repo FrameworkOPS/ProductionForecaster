@@ -13,6 +13,8 @@ export default function JobNimbusSetup() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<any | null>(null);
 
   useEffect(() => {
     checkStatus();
@@ -63,6 +65,23 @@ export default function JobNimbusSetup() {
     }
   };
 
+  const handleDiagnostic = async () => {
+    setDiagnosing(true);
+    setDiagnostic(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/jobnimbus/debug`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      setDiagnostic(data.data ?? data);
+    } catch (error) {
+      console.error('Error running diagnostic:', error);
+      setDiagnostic({ error: 'Could not connect to backend.' });
+    } finally {
+      setDiagnosing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -102,13 +121,22 @@ export default function JobNimbusSetup() {
                 Your JobNimbus jobs are connected. Pipeline data displays on the Sales Forecast tab.
               </p>
             </div>
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
-            >
-              {syncing ? 'Syncing...' : 'Sync Jobs Now'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleDiagnostic}
+                disabled={diagnosing}
+                className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+              >
+                {diagnosing ? 'Running…' : 'Run Diagnostic'}
+              </button>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 disabled:opacity-50"
+              >
+                {syncing ? 'Syncing...' : 'Sync Jobs Now'}
+              </button>
+            </div>
           </div>
 
           {syncResult && (
@@ -118,6 +146,47 @@ export default function JobNimbusSetup() {
               }`}
             >
               {syncResult}
+            </div>
+          )}
+
+          {diagnostic && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-700">
+                  Diagnostic — what JobNimbus is returning
+                </p>
+                <button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(diagnostic, null, 2))}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
+                >
+                  Copy
+                </button>
+              </div>
+              {typeof diagnostic.classifiedAsMetalOrShingle === 'number' && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <div className="bg-gray-50 border rounded p-2">
+                    <div className="text-xs text-gray-500">Total jobs</div>
+                    <div className="font-bold text-gray-900">{diagnostic.totalJobs}</div>
+                  </div>
+                  <div className="bg-gray-50 border rounded p-2">
+                    <div className="text-xs text-gray-500">Classified metal/shingle</div>
+                    <div className={`font-bold ${diagnostic.classifiedAsMetalOrShingle === 0 ? 'text-red-600' : 'text-green-700'}`}>
+                      {diagnostic.classifiedAsMetalOrShingle}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 border rounded p-2">
+                    <div className="text-xs text-gray-500">In forecast filter</div>
+                    <div className="font-bold text-gray-900">{diagnostic.forecastJobCount}</div>
+                  </div>
+                  <div className="bg-gray-50 border rounded p-2">
+                    <div className="text-xs text-gray-500">Jobs with squares</div>
+                    <div className="font-bold text-gray-900">{diagnostic.jobsWithSquares}</div>
+                  </div>
+                </div>
+              )}
+              <pre className="bg-gray-900 text-green-200 text-xs p-3 rounded overflow-auto max-h-96">
+                {JSON.stringify(diagnostic, null, 2)}
+              </pre>
             </div>
           )}
         </div>
