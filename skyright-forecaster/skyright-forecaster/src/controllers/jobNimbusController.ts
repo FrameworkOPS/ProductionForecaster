@@ -131,6 +131,16 @@ export const getPipelineSummary = asyncHandler(async (req: Request, res: Respons
     // their close-rate-weighted squares and sold work contributes full squares.
     const roofingSquares: RoofingSquaresSummary = service.aggregateRoofingSquares(pipelineJobs, squaresByJob);
 
+    // Gutters are tracked by job count + crew type, not squares. Split the
+    // count into firm vs. estimating so the UI can show both.
+    const gutterJobs = pipelineJobs.filter((j) => service.isGutterJob(j));
+    const gutters = {
+      crew_type: 'gutters',
+      total_jobs: gutterJobs.length,
+      pipeline_jobs: gutterJobs.filter((j) => !service.isEstimating(j)).length,
+      estimating_jobs: gutterJobs.filter((j) => service.isEstimating(j)).length,
+    };
+
     res.json({
       success: true,
       data: {
@@ -138,6 +148,7 @@ export const getPipelineSummary = asyncHandler(async (req: Request, res: Respons
         totalWeightedValue,
         totalWeightedSqs,
         roofingSquares,
+        gutters,
         message: 'JobNimbus pipeline summary (live data)',
         source: 'JobNimbus API',
       },

@@ -156,7 +156,17 @@ describe('JobNimbusService', () => {
       expect(m('Synthetic')).toBe('shingle');
       expect(m('Standing Seam')).toBe('metal');
       expect(m('Exposed Fastener')).toBe('metal');
-      expect(m('Gutters')).toBeNull(); // excluded from the roof forecast
+      expect(m('Gutters')).toBeNull(); // not a roof type
+    });
+
+    it('tracks gutters separately (count, not squares)', () => {
+      const gutter: JobNimbusJob = { jnid: 'g1', 'What Material?': 'Gutters' };
+      const shingle: JobNimbusJob = { jnid: 's1', 'What Material?': 'Shingles' };
+      expect(svc.isGutterJob(gutter)).toBe(true);
+      expect(svc.isGutterJob(shingle)).toBe(false);
+      // A gutter job must never leak into the squares-based roof forecast.
+      expect(svc.classifyJobType(gutter)).toBeNull();
+      expect(svc.countGutterJobs([gutter, shingle, gutter])).toBe(2);
     });
   });
 

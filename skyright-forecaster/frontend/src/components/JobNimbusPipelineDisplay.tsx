@@ -20,6 +20,13 @@ interface RoofingSquares {
   shingles: number;
 }
 
+interface GutterSummary {
+  crew_type: string;
+  total_jobs: number;
+  pipeline_jobs: number;
+  estimating_jobs: number;
+}
+
 // ─── Date helpers (mirror SalesForecastInput) ──────────────────────────────
 
 const getMonday = (date: Date): Date => {
@@ -54,6 +61,7 @@ export default function JobNimbusPipelineDisplay() {
   const { token } = useAuthStore();
   const [deals, setDeals] = useState<JobNimbusDeal[]>([]);
   const [roofingSquares, setRoofingSquares] = useState<RoofingSquares | null>(null);
+  const [gutters, setGutters] = useState<GutterSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +91,7 @@ export default function JobNimbusPipelineDisplay() {
       const data = await res.json();
       setDeals(data.data?.deals || []);
       setRoofingSquares(data.data?.roofingSquares ?? null);
+      setGutters(data.data?.gutters ?? null);
     } catch (err) {
       setError('Error loading JobNimbus pipeline');
       console.error(err);
@@ -281,6 +290,29 @@ export default function JobNimbusPipelineDisplay() {
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
               <p className="text-xs text-orange-600 font-medium">Metal SQs</p>
               <p className="text-xl font-bold text-orange-900">{roofingSquares.metal.toFixed(0)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gutters — tracked by job count + crew type, not squares */}
+      {gutters && gutters.total_jobs > 0 && (
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">
+            Gutters — Job Count (crew type: gutters)
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white p-3 rounded border border-emerald-200">
+              <p className="text-xs text-gray-500 font-medium">Total Jobs</p>
+              <p className="text-xl font-bold text-emerald-900">{gutters.total_jobs}</p>
+            </div>
+            <div className="bg-white p-3 rounded border border-emerald-200">
+              <p className="text-xs text-gray-500 font-medium">Firm</p>
+              <p className="text-xl font-bold text-emerald-900">{gutters.pipeline_jobs}</p>
+            </div>
+            <div className="bg-white p-3 rounded border border-emerald-200">
+              <p className="text-xs text-gray-500 font-medium">Estimating</p>
+              <p className="text-xl font-bold text-amber-700">{gutters.estimating_jobs}</p>
             </div>
           </div>
         </div>
