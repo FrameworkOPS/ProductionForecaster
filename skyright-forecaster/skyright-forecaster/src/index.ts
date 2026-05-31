@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import { initializeDatabase, closePool } from './config/database';
 import { errorHandler } from './middleware/errorHandler';
 import authRoutes from './routes/authRoutes';
+import userRoutes from './routes/userRoutes';
 import jobsRoutes from './routes/jobsRoutes';
 import parametersRoutes from './routes/parametersRoutes';
 import forecastRoutes from './routes/forecastRoutes';
@@ -60,6 +61,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/jobs', jobsRoutes);
 app.use('/api/parameters', parametersRoutes);
 app.use('/api/forecasts', forecastRoutes);

@@ -17,13 +17,15 @@ export default function Navigation() {
     navigate('/login')
   }
 
+  const links = user?.role === 'admin' ? [...NAV_LINKS, { to: '/users', label: 'Team' }] : NAV_LINKS
+
   return (
     <nav className="bg-gray-900 text-white px-4 py-3">
       <div className="max-w-7xl mx-auto flex justify-between items-center">
         <div className="flex items-center gap-6">
           <span className="text-lg font-bold text-teal-400 tracking-tight">SKYRIGHT</span>
           <div className="flex gap-1">
-            {NAV_LINKS.map(link => (
+            {links.map(link => (
               <Link
                 key={link.to}
                 to={link.to}

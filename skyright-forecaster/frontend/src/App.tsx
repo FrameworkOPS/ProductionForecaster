@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard'
 import Estimating from './pages/Estimating'
 import EstimateDetail from './pages/EstimateDetail'
 import Prices from './pages/Prices'
+import SetPassword from './pages/SetPassword'
+import UserManagement from './pages/UserManagement'
 
 // Production Forecaster - Roofing Business Management
 function App() {
@@ -13,10 +15,12 @@ function App() {
       <Navigation />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/set-password" element={<SetPassword />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/estimating" element={<Estimating />} />
         <Route path="/estimating/:id" element={<EstimateDetail />} />
         <Route path="/prices" element={<Prices />} />
+        <Route path="/users" element={<UserManagement />} />
         <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </Router>

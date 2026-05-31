@@ -66,6 +66,11 @@ export async function initializeDatabase(): Promise<void> {
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Invitation flow columns (idempotent migration for existing DBs).
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_token VARCHAR(255);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_expires TIMESTAMP;
+      CREATE INDEX IF NOT EXISTS idx_users_invite_token ON users(invite_token);
+
       CREATE TABLE IF NOT EXISTS crews (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         crew_name VARCHAR(255) NOT NULL,

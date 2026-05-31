@@ -4,6 +4,11 @@ import { query } from '../config/database';
 import { hashPassword, comparePassword, generateToken } from '../utils/auth';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
 
+interface AcceptInviteRequest {
+  token: string;
+  password: string;
+}
+
 interface RegisterRequest {
   email: string;
   password: string;
@@ -100,6 +105,69 @@ export const login = asyncHandler(async (req: Request<{}, {}, LoginRequest>, res
     },
   });
 });
+
+// ── Invitation acceptance (public) ─────────────────────────────────────────
+
+// Validate an invite token and return who it's for (so the set-password page can greet them).
+export const getInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { token } = req.params;
+  const result = await query(
+    'SELECT email, first_name, last_name, role, invite_expires FROM users WHERE invite_token = $1',
+    [token]
+  );
+  const u = result.rows[0];
+  if (!u) {
+    throw new AppError('Invalid or already-used invitation', 404);
+  }
+  if (u.invite_expires && new Date(u.invite_expires) < new Date()) {
+    throw new AppError('This invitation has expired. Ask an admin to resend it.', 410);
+  }
+  res.json({
+    success: true,
+    email: u.email,
+    firstName: u.first_name,
+    lastName: u.last_name,
+    role: u.role,
+  });
+});
+
+// Set the password for an invited user, activate them, and log them in.
+export const acceptInvite = asyncHandler(
+  async (req: Request<{}, {}, AcceptInviteRequest>, res: Response) => {
+    const { token, password } = req.body;
+    if (!token || !password) {
+      throw new AppError('token and password are required', 400);
+    }
+    if (String(password).length < 6) {
+      throw new AppError('Password must be at least 6 characters', 400);
+    }
+
+    const result = await query('SELECT * FROM users WHERE invite_token = $1', [token]);
+    const u = result.rows[0];
+    if (!u) {
+      throw new AppError('Invalid or already-used invitation', 400);
+    }
+    if (u.invite_expires && new Date(u.invite_expires) < new Date()) {
+      throw new AppError('This invitation has expired. Ask an admin to resend it.', 410);
+    }
+
+    const hash = await hashPassword(password);
+    await query(
+      `UPDATE users SET password_hash = $1, active = true, invite_token = NULL,
+         invite_expires = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [hash, u.id]
+    );
+
+    const token2 = generateToken({ userId: u.id, email: u.email, role: u.role });
+    res.json({
+      success: true,
+      message: 'Account activated',
+      token: token2,
+      user: { id: u.id, email: u.email, role: u.role },
+    });
+  }
+);
 
 export const getCurrentUser = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) {

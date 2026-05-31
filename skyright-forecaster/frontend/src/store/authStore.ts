@@ -114,6 +114,23 @@ export const useAuthStore = create<AuthStore>((set) => ({
   checkAuth: () => {
     const token = localStorage.getItem('token')
     set({ isAuthenticated: !!token, token, loading: false })
+    // Hydrate the current user (incl. role) so role-gated UI survives a refresh.
+    if (token && !USE_MOCK_API) {
+      fetch(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.user) {
+            set({
+              user: {
+                userId: data.user.id,
+                email: data.user.email,
+                role: data.user.role,
+              },
+            })
+          }
+        })
+        .catch(() => {})
+    }
   },
 }))
 
