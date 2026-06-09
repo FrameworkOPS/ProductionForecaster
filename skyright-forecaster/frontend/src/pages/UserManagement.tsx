@@ -26,6 +26,10 @@ export default function UserManagement() {
   const [notice, setNotice] = useState<string | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [saving, setSaving] = useState(false)
+  const [resetTarget, setResetTarget] = useState<User | null>(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetSaving, setResetSaving] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -112,6 +116,45 @@ export default function UserManagement() {
       load()
     } catch (e: any) {
       setError(e.message)
+    }
+  }
+
+  const openReset = (u: User) => {
+    setResetTarget(u)
+    setResetPassword('')
+    setResetError(null)
+  }
+
+  const closeReset = () => {
+    setResetTarget(null)
+    setResetPassword('')
+    setResetError(null)
+    setResetSaving(false)
+  }
+
+  const submitReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!resetTarget) return
+    if (resetPassword.length < 6) {
+      setResetError('Password must be at least 6 characters.')
+      return
+    }
+    setResetSaving(true)
+    setResetError(null)
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/${resetTarget.id}`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({ password: resetPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Could not reset password.')
+      setNotice(`Password reset for ${resetTarget.email}.`)
+      closeReset()
+      load()
+    } catch (e: any) {
+      setResetError(e.message)
+      setResetSaving(false)
     }
   }
 
@@ -257,6 +300,11 @@ export default function UserManagement() {
                         {u.active ? 'Deactivate' : 'Activate'}
                       </button>
                     )}
+                    {!u.invited && (
+                      <button onClick={() => openReset(u)} className="text-blue-600 text-xs hover:underline">
+                        Reset password
+                      </button>
+                    )}
                     {user?.userId !== u.id && (
                       <button onClick={() => removeUser(u.id, u.email)} className="text-red-600 text-xs hover:underline">
                         Delete
@@ -269,6 +317,64 @@ export default function UserManagement() {
           </table>
         )}
       </div>
+
+      {resetTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <form
+            onSubmit={submitReset}
+            className="bg-white rounded-lg shadow-xl w-full max-w-md p-6"
+          >
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Reset password</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Set a new password for <span className="font-medium">{resetTarget.email}</span>. Share it
+              with them securely — they can change it later.
+            </p>
+            {resetError && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3 text-sm">
+                {resetError}
+              </div>
+            )}
+            <label className="block text-xs font-medium text-gray-600 mb-1">New password</label>
+            <input
+              type="text"
+              autoFocus
+              value={resetPassword}
+              onChange={(e) => setResetPassword(e.target.value)}
+              minLength={6}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm mb-2"
+              placeholder="At least 6 characters"
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setResetPassword(
+                  Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
+                )
+              }
+              className="text-xs text-blue-600 hover:underline mb-4"
+            >
+              Generate random password
+            </button>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReset}
+                disabled={resetSaving}
+                className="px-4 py-2 text-sm text-gray-700 rounded-md hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={resetSaving}
+                className="bg-blue-600 text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {resetSaving ? 'Saving…' : 'Reset password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }
