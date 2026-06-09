@@ -17,7 +17,7 @@ export default function Navigation() {
     navigate('/login')
   }
 
-  const links = user?.role === 'admin' ? [...NAV_LINKS, { to: '/users', label: 'Team' }] : NAV_LINKS
+  const links = user?.role === 'admin' ? [...NAV_LINKS, { to: '/users', label: 'Users' }] : NAV_LINKS
 
   return (
     <nav className="bg-gray-900 text-white px-4 py-3">
